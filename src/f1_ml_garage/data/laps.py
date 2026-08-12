@@ -60,7 +60,7 @@ def normalize_laps(raw: pd.DataFrame) -> pd.DataFrame:
 
     Levanta:
         MissingColumnsError: se `raw` não contiver alguma das colunas em
-        `REQUIRED_RAW_COLUMNS`.
+            `REQUIRED_RAW_COLUMNS`.
     """
     missing = [c for c in REQUIRED_RAW_COLUMNS if c not in raw.columns]
     if missing:
