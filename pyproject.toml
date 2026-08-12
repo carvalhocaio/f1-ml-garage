@@ -4,9 +4,31 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "fastf1>=3.8.3",
+    "pandas>=2.3.3",
+]
 
 [dependency-groups]
 dev = [
+    "ipython>=9.16.1",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
     "ruff>=0.16.2",
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "unit: testes rápidos, sem dependência externa",
+    "integration: bate na API real do FastF1 (rede); pulado por padrão",
+    "slow: testes de treino/avaliação de modelos com datasets maiores",
+]
+addopts = "-q --strict-markers"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/f1_ml_garage"]

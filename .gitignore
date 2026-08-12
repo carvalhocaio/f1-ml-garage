@@ -11,3 +11,6 @@ wheels/
 
 # Others
 .ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
