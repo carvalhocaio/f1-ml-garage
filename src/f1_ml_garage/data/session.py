@@ -13,6 +13,8 @@ import fastf1
 import pandas as pd
 
 from f1_ml_garage.data.laps import normalize_laps
+from f1_ml_garage.data.results import normalize_results
+from f1_ml_garage.data.telemetry import normalize_telemetry
 
 DEFAULT_CACHE_DIR = Path.home() / ".cache" / "f1-ml-garage" / "fastf1"
 
@@ -40,3 +42,29 @@ def load_session_laps(year: int, gp: str, session_type: str = "R") -> pd.DataFra
     session = fastf1.get_session(year, gp, session_type)
     session.load(laps=True, telemetry=False, weather=False, messages=False)
     return normalize_laps(session.laps)
+
+
+def load_session_results(year: int, gp: str, session_type: str = "R") -> pd.DataFrame:
+    """Carrega e normaliza a classificação final de uma sessão de F1.
+
+    Args mesmo formato de `load_session_laps`.
+    """
+    session = fastf1.get_session(year, gp, session_type)
+    session.load(laps=False, telemetry=False, weather=False, messages=False)
+    return normalize_results(session.results)
+
+
+def load_driver_telemetry(
+    year: int, gp: str, driver: str, session_type: str = "R"
+) -> pd.DataFrame:
+    """Carrega e normaliza a telemetria completa de um piloto na sessão
+    (todas as voltas combinadas, uma linha por amostra).
+
+    Args:
+        driver: código de 3 letras (ex.: "VER") ou número do piloto.
+        demais args: mesmo formato de `load_session_laps`.
+    """
+    session = fastf1.get_session(year, gp, session_type)
+    session.load(laps=True, telemetry=True, weather=False, messages=False)
+    raw_telemetry = session.laps.pick_driver(driver).get_telemetry()
+    return normalize_telemetry(raw_telemetry)

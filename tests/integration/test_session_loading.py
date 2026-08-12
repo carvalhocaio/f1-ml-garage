@@ -11,7 +11,12 @@ import os
 
 import pytest
 
-from f1_ml_garage.data.session import enable_cache, load_session_laps
+from f1_ml_garage.data.session import (
+    enable_cache,
+    load_driver_telemetry,
+    load_session_laps,
+    load_session_results,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -26,3 +31,23 @@ def test_loads_real_race_session():
 
     assert len(laps) > 0
     assert {"driver", "lap_time_s", "compound", "stint"}.issubset(laps.columns)
+
+
+@pytest.mark.skipif(not RUN_INTEGRATION, reason=SKIP_REASON)
+def test_loads_real_race_results():
+    enable_cache()
+    results = load_session_results(2024, "Bahrain", "R")
+
+    assert len(results) > 0
+    assert {"driver", "position", "status", "dnf", "points"}.issubset(results.columns)
+
+
+@pytest.mark.skipif(not RUN_INTEGRATION, reason=SKIP_REASON)
+def test_loads_real_driver_telemetry():
+    enable_cache()
+    telemetry = load_driver_telemetry(2024, "Bahrain", "VER", "R")
+
+    assert len(telemetry) > 0
+    assert {"speed_kmh", "throttle_pct", "brake", "x_m", "y_m", "on_track"}.issubset(
+        telemetry.columns
+    )
