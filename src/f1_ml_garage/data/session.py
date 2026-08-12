@@ -66,5 +66,5 @@ def load_driver_telemetry(
     """
     session = fastf1.get_session(year, gp, session_type)
     session.load(laps=True, telemetry=True, weather=False, messages=False)
-    raw_telemetry = session.laps.pick_driver(driver).get_telemetry()
+    raw_telemetry = session.laps.pick_drivers(driver).get_telemetry()
     return normalize_telemetry(raw_telemetry)
