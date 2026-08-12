@@ -13,6 +13,7 @@ da API real da F1. O carregamento via rede vive em `session.py`.
 
 import pandas as pd
 
+from f1_ml_garage.data.timeutils import timedelta_to_seconds
 from f1_ml_garage.exceptions import MissingColumnsError
 
 REQUIRED_RAW_COLUMNS: tuple[str, ...] = (
@@ -36,17 +37,6 @@ REQUIRED_RAW_COLUMNS: tuple[str, ...] = (
     "PitInTime",
     "PitOutTime",
 )
-
-
-def _timedelta_to_seconds(series: pd.Series) -> pd.Series:
-    """Converte uma coluna `timedelta64[ns]` do FastF1 para segundos (float).
-
-    FastF1 representa tempos de volta/setor como `pd.Timedelta`. Resolver
-    isso para segundos logo na normalização evita que módulos de ML tenham
-    que lidar com aritmética de Timedelta mais adiante; `NaT` vira `NaN`
-    naturalmente via `.dt.total_seconds()`.
-    """
-    return series.dt.total_seconds()
 
 
 def normalize_laps(raw: pd.DataFrame) -> pd.DataFrame:
@@ -73,11 +63,11 @@ def normalize_laps(raw: pd.DataFrame) -> pd.DataFrame:
     normalized["driver_number"] = raw["DriverNumber"]
     normalized["team"] = raw["Team"]
     normalized["lap_number"] = raw["LapNumber"]
-    normalized["session_time_s"] = _timedelta_to_seconds(raw["Time"])
-    normalized["lap_time_s"] = _timedelta_to_seconds(raw["LapTime"])
-    normalized["sector1_s"] = _timedelta_to_seconds(raw["Sector1Time"])
-    normalized["sector2_s"] = _timedelta_to_seconds(raw["Sector2Time"])
-    normalized["sector3_s"] = _timedelta_to_seconds(raw["Sector3Time"])
+    normalized["session_time_s"] = timedelta_to_seconds(raw["Time"])
+    normalized["lap_time_s"] = timedelta_to_seconds(raw["LapTime"])
+    normalized["sector1_s"] = timedelta_to_seconds(raw["Sector1Time"])
+    normalized["sector2_s"] = timedelta_to_seconds(raw["Sector2Time"])
+    normalized["sector3_s"] = timedelta_to_seconds(raw["Sector3Time"])
     normalized["stint"] = raw["Stint"]
     normalized["compound"] = raw["Compound"].str.lower()
     normalized["tyre_life"] = raw["TyreLife"]
