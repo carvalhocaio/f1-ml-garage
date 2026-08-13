@@ -16,6 +16,7 @@ def _laps(**overrides: object) -> pd.DataFrame:
         {
             "driver": ["VER", "VER", "HAM", "HAM"],
             "lap_time_s": [88.5, 89.0, 90.1, 90.5],
+            "lap_number": [1.0, 2.0, 1.0, 2.0],
             "compound": ["soft", "soft", "medium", "medium"],
             "tyre_life": [1.0, 2.0, 1.0, 2.0],
             "track_status": ["1", "1", "1", "1"],
@@ -58,6 +59,13 @@ def test_build_pace_features_one_hot_is_mutually_exclusive():
     features, _, _ = build_pace_features(_laps())
     dummy_cols = ["compound_soft", "compound_medium", "compound_hard"]
     assert (features[dummy_cols].sum(axis=1) == 1).all()
+
+
+@pytest.mark.unit
+def test_build_pace_features_includes_lap_number():
+    laps = _laps()
+    features, _, _ = build_pace_features(laps)
+    assert list(features["lap_number"]) == list(laps["lap_number"])
 
 
 @pytest.mark.unit

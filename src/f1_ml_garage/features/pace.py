@@ -44,12 +44,24 @@ def build_pace_features(
     `groups` (o piloto de cada volta) não entra em X: existe pra uso em
     `GroupKFold` na avaliação do modelo, evitando que voltas do mesmo
     piloto apareçam em treino e teste ao mesmo tempo.
+
+    `lap_number` entra como proxy de dois efeitos sistemáticos que não
+    temos direto no schema: carga de combustível (carro fica mais leve e
+    mais rápido ao longo da corrida) e evolução de pista (asfalto fica mais
+    rápido conforme mais borracha é depositada). Não é colinear com
+    `tyre_life` apesar de ambos crescerem "com o tempo": `tyre_life` zera a
+    cada pit stop, `lap_number` não — dá pra separar o efeito de pneu novo
+    numa volta 30 (tyre_life baixo, lap_number alto) do de pneu novo numa
+    volta 3 (os dois baixos).
     """
     compound = pd.Categorical(laps["compound"], categories=COMPOUND_CATEGORIES)
     compound_dummies = pd.get_dummies(compound, prefix="compound")
 
     features = pd.concat(
-        [laps[["tyre_life"]].reset_index(drop=True), compound_dummies],
+        [
+            laps[["tyre_life", "lap_number"]].reset_index(drop=True),
+            compound_dummies,
+        ],
         axis=1,
     )
     target = laps["lap_time_s"].reset_index(drop=True)
