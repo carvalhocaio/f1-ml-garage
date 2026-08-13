@@ -30,20 +30,27 @@ REQUIRED_RAW_COLUMNS: tuple[str, ...] = (
     "Laps",
 )
 
-# Réplica, em regex, do critério usado por `fastf1.core.DriverResult.dnf`
-# (`Status[3:6] == "Lap"` ou `Status == "Finished"`). Preferimos regex ao
-# slice fixo do FastF1: o slice assume um único dígito no número de voltas
-# de atraso e falha silenciosamente para "+10 Laps" ou mais (índices [3:6]
-# caem em " La", não "Lap"). Raro, mas acontece em corridas com muitos
-# safety cars/abandonos.
-_LAPPED_BUT_CLASSIFIED = r"^\+\d+\s*Laps?$"
+# Valores de Status observados no schema do FastF1 (backend nativo,
+# >=2018): confirmado contra a temporada 2024 real via
+# `results["status"].value_counts()` -> "Finished", "Lapped", "Retired",
+# "Did not start", "Disqualified". NENHUM deles usa o formato "+N Lap(s)"
+# que a documentação oficial do FastF1 lista como exemplo — a versão
+# instalada (v3.8.3) usa strings categóricas simples, não esse formato.
+# Uma primeira versão desta função usava uma regex pra casar "+N Lap(s)",
+# que nunca batia com "Lapped" — classificando 138 de 479 pilotos (a
+# temporada inteira de 2024) como DNF por engano (taxa de "DNF" de ~40%,
+# quando o valor real é bem mais baixo).
+#
+# Allowlist (não denylist) de propósito: um status novo e desconhecido (de
+# uma temporada futura, ou do backend Ergast pra temporadas <2018) conta
+# como DNF por padrão — mais seguro que o contrário, já que assumir
+# "terminou" por engano esconderia um abandono real do alvo.
+_FINISHED_STATUSES = frozenset({"Finished", "Lapped"})
 
 
 def _is_dnf(status: pd.Series) -> pd.Series:
     """True quando o piloto não é considerado como tendo terminado a prova."""
-    finished = status == "Finished"
-    lapped = status.str.match(_LAPPED_BUT_CLASSIFIED)
-    return ~(finished | lapped)
+    return ~status.isin(_FINISHED_STATUSES)
 
 
 def normalize_results(raw: pd.DataFrame) -> pd.DataFrame:

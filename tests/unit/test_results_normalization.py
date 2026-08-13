@@ -7,30 +7,62 @@ from f1_ml_garage.exceptions import MissingColumnsError
 
 def _raw_results(**overrides: object) -> pd.DataFrame:
     """Monta um DataFrame bruto no schema do FastF1 (`SessionResults._COLUMNS`)
-    com 3 pilotos: um vendedor, um abandono clássico, e um "classificado com
-    voltas de atraso" (caso que testa o regex de `_is_dnf`).
+    com 5 pilotos, um pra cada valor real de Status observado na temporada
+    2024 (`Finished`, `Lapped`, `Retired`, `Did not start`, `Disqualified`)
+    — não o formato "+N Lap" que a documentação sugere mas que a versão
+    instalada do FastF1 não usa de fato (ver comentário em `results.py`).
     """
     base = pd.DataFrame(
         {
-            "DriverNumber": ["1", "44", "16"],
-            "Abbreviation": ["VER", "HAM", "LEC"],
-            "FullName": ["Max Verstappen", "Lewis Hamilton", "Charles Leclerc"],
-            "TeamName": ["Red Bull Racing", "Mercedes", "Ferrari"],
-            "CountryCode": ["NED", "GBR", "MON"],
-            "Position": [1.0, 2.0, float("nan")],
-            "ClassifiedPosition": ["1", "2", "R"],
-            "GridPosition": [1.0, 3.0, 5.0],
-            "Q1": pd.to_timedelta(
-                ["0 days 00:01:30", "0 days 00:01:31", "0 days 00:01:29"]
+            "DriverNumber": ["1", "44", "16", "63", "4"],
+            "Abbreviation": ["VER", "HAM", "LEC", "RUS", "NOR"],
+            "FullName": [
+                "Max Verstappen",
+                "Lewis Hamilton",
+                "Charles Leclerc",
+                "George Russell",
+                "Lando Norris",
+            ],
+            "TeamName": [
+                "Red Bull Racing",
+                "Mercedes",
+                "Ferrari",
+                "Mercedes",
+                "McLaren",
+            ],
+            "CountryCode": ["NED", "GBR", "MON", "GBR", "GBR"],
+            "Position": [1.0, 2.0, float("nan"), 3.0, float("nan")],
+            "ClassifiedPosition": ["1", "2", "R", "3", "D"],
+            "GridPosition": [1.0, 3.0, 5.0, 4.0, 2.0],
+            "Q1": pd.to_timedelta(["0 days 00:01:30"] * 5),
+            "Q2": pd.to_timedelta(["0 days 00:01:29"] * 5),
+            "Q3": pd.to_timedelta(
+                [
+                    "0 days 00:01:28",
+                    "0 days 00:01:29",
+                    pd.NaT,
+                    "0 days 00:01:30",
+                    pd.NaT,
+                ]
             ),
-            "Q2": pd.to_timedelta(
-                ["0 days 00:01:29", "0 days 00:01:30", "0 days 00:01:28"]
+            "Time": pd.to_timedelta(
+                [
+                    "0 days 01:32:00",
+                    "0 days 01:32:15",
+                    pd.NaT,
+                    "0 days 01:32:40",
+                    pd.NaT,
+                ]
             ),
-            "Q3": pd.to_timedelta(["0 days 00:01:28", "0 days 00:01:29", pd.NaT]),
-            "Time": pd.to_timedelta(["0 days 01:32:00", "0 days 01:32:15", pd.NaT]),
-            "Status": ["Finished", "+1 Lap", "Accident"],
-            "Points": [25.0, 18.0, 0.0],
-            "Laps": [57.0, 57.0, 40.0],
+            "Status": [
+                "Finished",
+                "Lapped",
+                "Retired",
+                "Did not start",
+                "Disqualified",
+            ],
+            "Points": [25.0, 18.0, 0.0, 15.0, 0.0],
+            "Laps": [57.0, 57.0, 40.0, 0.0, 57.0],
         }
     )
     return base.assign(**overrides)
@@ -51,9 +83,11 @@ def test_finished_driver_is_not_dnf():
 
 
 @pytest.mark.unit
-def test_lapped_but_classified_driver_is_not_dnf():
-    """ "+1 Lap" significa que o piloto terminou, só que voltas atrás do
-    líder - não é um abandono."""
+def test_lapped_driver_is_not_dnf():
+    """ "Lapped" é o valor real que o FastF1 usa pra "terminou, mas voltas
+    atrás do líder" — não é um abandono. (Não existe "+N Lap" na versão
+    instalada; ver comentário em `results.py` sobre o bug que isso causou.)
+    """
     results = normalize_results(_raw_results())
     assert not results.loc[1, "dnf"]
 
@@ -65,12 +99,28 @@ def test_retired_driver_is_dnf():
 
 
 @pytest.mark.unit
-def test_double_digit_lapped_driver_is_not_dnf():
-    """Caso que o slice fixo Status[3:6] do FastF1 erra: "+10 Laps" tem que
-    ser reconhecido como classificado, não como abandono."""
-    raw = _raw_results(Status=["Finished", "+10 Laps", "Accident"])
+def test_did_not_start_driver_is_dnf():
+    results = normalize_results(_raw_results())
+    assert results.loc[3, "dnf"]
+
+
+@pytest.mark.unit
+def test_disqualified_driver_is_dnf():
+    results = normalize_results(_raw_results())
+    assert results.loc[4, "dnf"]
+
+
+@pytest.mark.unit
+def test_unknown_status_defaults_to_dnf():
+    """Allowlist, não denylist: um status nunca visto (ex.: mudança futura
+    no schema do FastF1, ou backend Ergast pra temporadas <2018) tem que
+    contar como DNF por padrão — mais seguro que assumir "terminou" sem
+    saber."""
+    raw = _raw_results(
+        Status=["Finished", "Withdrawn", "Retired", "Did not start", "Disqualified"]
+    )
     results = normalize_results(raw)
-    assert not results.loc[1, "dnf"]
+    assert results.loc[1, "dnf"]
 
 
 @pytest.mark.unit
