@@ -13,7 +13,7 @@ raciocínio por trás das escolhas de implementação.
 
 ## Estrutura
 
-​```
+```
 src/f1_ml_garage/
 └── data/
     ├── timeutils.py   # conversão Timedelta -> segundos, compartilhada
@@ -22,15 +22,15 @@ src/f1_ml_garage/
     ├── telemetry.py   # normalização de telemetria por amostra
     └── session.py     # carregamento via FastF1, com cache (a única
                        # parte do projeto que fala com a rede)
-​```
+```
 
 ## Setup
 
 Requer Python 3.12+ e [`uv`](https://docs.astral.sh/uv/).
 
-​```bash
+```bash
 uv sync --all-groups
-​```
+```
 
 ## Testes
 
@@ -40,21 +40,21 @@ Os testes são organizados por marker:
 - `integration` — bate na API real do FastF1 (rede); pulado por padrão
 - `slow` — testes de treino/avaliação de modelos com datasets maiores
 
-​```bash
+```bash
 make test              # unit (padrão, sem rede)
 make test-integration  # inclui integration, bate na API real do FastF1
 make test-cov          # unit com relatório de cobertura
-​```
+```
 
 ## Lint e formatação
 
-​```bash
+```bash
 make lint           # ruff check
 make lint-fix       # ruff check --fix
 make format         # ruff format
 make format-check   # ruff format --check
 make check          # lint + format-check
-​```
+```
 
 ## Documentação
 
