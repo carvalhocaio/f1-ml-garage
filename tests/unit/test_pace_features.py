@@ -42,23 +42,25 @@ def test_select_green_flag_laps_drops_inaccurate_laps():
 
 
 @pytest.mark.unit
-def test_build_pace_features_encodes_all_compound_categories():
-    """Mesmo um subconjunto sem voltas de "hard" tem que gerar a coluna
-    `compound_hard` (zerada) — o shape de X não pode depender de quais
-    compostos aparecem no subconjunto recebido."""
+def test_build_pace_features_encodes_compound_relative_to_medium():
+    """ "medium" é a referência (fica de fora do one-hot, capturada pelo
+    intercepto do modelo) — só soft/hard viram colunas."""
     features, _, _ = build_pace_features(_laps())
 
-    assert {"compound_soft", "compound_medium", "compound_hard"}.issubset(
-        features.columns
-    )
-    assert (features["compound_hard"] == 0).all()
+    assert "compound_soft" in features.columns
+    assert "compound_hard" in features.columns
+    assert "compound_medium" not in features.columns
 
 
 @pytest.mark.unit
-def test_build_pace_features_one_hot_is_mutually_exclusive():
-    features, _, _ = build_pace_features(_laps())
-    dummy_cols = ["compound_soft", "compound_medium", "compound_hard"]
-    assert (features[dummy_cols].sum(axis=1) == 1).all()
+def test_build_pace_features_medium_rows_are_all_zero_reference():
+    laps = _laps(compound=["soft", "medium", "hard", "medium"])
+    features, _, _ = build_pace_features(laps)
+
+    assert features.loc[1, "compound_soft"] == 0
+    assert features.loc[1, "compound_hard"] == 0
+    assert features.loc[3, "compound_soft"] == 0
+    assert features.loc[3, "compound_hard"] == 0
 
 
 @pytest.mark.unit

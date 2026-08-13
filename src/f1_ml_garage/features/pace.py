@@ -17,6 +17,18 @@ from f1_ml_garage.data.laps import filter_accurate_laps
 # categorias garante o mesmo shape de X sempre, treino ou predição.
 COMPOUND_CATEGORIES = ("soft", "medium", "hard")
 
+# "medium" fica de fora do one-hot e vira a referência implícita (capturada
+# pelo intercepto). Com um modelo que tem intercepto, incluir dummies pras
+# 3 categorias cria colinearidade perfeita — a soma das 3 colunas é sempre
+# 1, igual à coluna implícita do intercepto. `LinearRegression` ainda
+# resolve isso (via mínimos quadrados) e a PREVISÃO sai correta, mas os
+# coeficientes individuais ficam matematicamente indeterminados: existem
+# infinitas combinações intercepto/coeficientes que dão a mesma previsão.
+# Descartar uma categoria de referência resolve isso e deixa os
+# coeficientes restantes diretamente interpretáveis: "quanto mais
+# rápido/lento que o medium".
+COMPOUND_REFERENCE = "medium"
+
 
 def select_green_flag_laps(laps: pd.DataFrame) -> pd.DataFrame:
     """Restringe a voltas cronometradas confiáveis (`filter_accurate_laps`)
@@ -55,7 +67,9 @@ def build_pace_features(
     volta 3 (os dois baixos).
     """
     compound = pd.Categorical(laps["compound"], categories=COMPOUND_CATEGORIES)
-    compound_dummies = pd.get_dummies(compound, prefix="compound")
+    compound_dummies = pd.get_dummies(compound, prefix="compound").drop(
+        columns=[f"compound_{COMPOUND_REFERENCE}"]
+    )
 
     features = pd.concat(
         [
