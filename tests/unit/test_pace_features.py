@@ -1,7 +1,11 @@
 import pandas as pd
 import pytest
 
-from f1_ml_garage.features.pace import build_pace_features, select_green_flag_laps
+from f1_ml_garage.features.pace import (
+    build_pace_features,
+    compute_driver_delta_target,
+    select_green_flag_laps,
+)
 
 
 def _laps(**overrides: object) -> pd.DataFrame:
@@ -78,3 +82,33 @@ def test_build_pace_features_target_matches_lap_time():
     laps = _laps()
     _, target, _ = build_pace_features(laps)
     assert list(target) == list(laps["lap_time_s"])
+
+
+@pytest.mark.unit
+def test_delta_target_is_zero_for_driver_with_constant_pace():
+    laps = _laps(lap_time_s=[90.0, 90.0, 95.0, 95.0])
+    delta = compute_driver_delta_target(laps)
+    assert (delta == 0.0).all()
+
+
+@pytest.mark.unit
+def test_delta_target_centers_each_driver_independently():
+    """VER e HAM têm baseline de ritmo bem diferente (90s vs 95s), mas o
+    mesmo padrão relativo dentro do próprio stint (-0.5s/+0.5s). O delta
+    tem que zerar essa diferença de baseline e só sobrar o padrão relativo,
+    igual pros dois pilotos."""
+    laps = _laps(lap_time_s=[89.5, 90.5, 94.5, 95.5])
+    delta = compute_driver_delta_target(laps)
+    assert list(delta) == pytest.approx([-0.5, 0.5, -0.5, 0.5])
+
+
+@pytest.mark.unit
+def test_delta_target_does_not_leak_across_drivers():
+    """Mudar só o ritmo médio do HAM não pode afetar o delta do VER."""
+    laps_a = _laps(lap_time_s=[89.5, 90.5, 94.5, 95.5])
+    laps_b = _laps(lap_time_s=[89.5, 90.5, 120.5, 121.5])
+
+    delta_a = compute_driver_delta_target(laps_a)
+    delta_b = compute_driver_delta_target(laps_b)
+
+    assert list(delta_a[:2]) == pytest.approx(list(delta_b[:2]))

@@ -56,3 +56,25 @@ def build_pace_features(
     groups = laps["driver"].reset_index(drop=True)
 
     return features, target, groups
+
+
+def compute_driver_delta_target(laps: pd.DataFrame) -> pd.Series:
+    """Alvo alternativo: delta de tempo de volta em relação à média do
+    próprio piloto na sessão (`lap_time_s - média(lap_time_s) por driver`).
+
+    O primeiro modelo, treinado sobre `lap_time_s` bruto, teve R² ≈ 0.02
+    numa corrida real (ver `docs/01-pace-model.md`) — a diferença de ritmo
+    baseline entre carros/pilotos (facilmente 1-2s/volta em 2024) domina
+    tanto a variância que o efeito de composto/idade de pneu (frações de
+    segundo) vira ruído por comparação. Centralizar por piloto remove essa
+    baseline da variável de resposta, isolando o que queremos medir: o
+    efeito de composto/idade de pneu *dentro* do desempenho de cada piloto.
+
+    Não vaza informação entre pilotos: `groupby("driver").transform("mean")`
+    usa só as voltas do próprio piloto. E como a avaliação agrupa por
+    piloto (`GroupKFold`), todas as voltas de um piloto já ficam inteiramente
+    de um lado do split — a média usada pra centralizar nunca mistura dado
+    de treino com dado de teste.
+    """
+    driver_mean = laps.groupby("driver")["lap_time_s"].transform("mean")
+    return (laps["lap_time_s"] - driver_mean).reset_index(drop=True)

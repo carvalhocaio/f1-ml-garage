@@ -1,10 +1,10 @@
 """Teste de integração ponta-a-ponta: sessão real -> features -> modelo.
 
-Mesmo padrão de `test_session_loading.py` - pulado por padrão, roda com
+Mesmo padrão de `test_session_loading.py` — pulado por padrão, roda com
 `make test-integration`. As asserções aqui são propositalmente frouxas
 (sanidade, não qualidade do modelo): o objetivo é pegar quebras de pipeline
 em dado real e "sujo" (NaNs, categorias inesperadas, contagem de voltas
-variável por piloto) que fixtures sintéticas não expõem - não validar se
+variável por piloto) que fixtures sintéticas não expõem — não validar se
 0.03s/volta de degradação é um R² "bom".
 """
 
@@ -14,7 +14,11 @@ import os
 import pytest
 
 from f1_ml_garage.data.session import enable_cache, load_session_laps
-from f1_ml_garage.features.pace import build_pace_features, select_green_flag_laps
+from f1_ml_garage.features.pace import (
+    build_pace_features,
+    compute_driver_delta_target,
+    select_green_flag_laps,
+)
 from f1_ml_garage.models.pace import evaluate_pace_model
 
 pytestmark = pytest.mark.integration
@@ -31,8 +35,9 @@ def test_pace_pipeline_runs_end_to_end_on_real_session():
     green = select_green_flag_laps(laps)
     assert len(green) > 0
 
-    features, target, groups = build_pace_features(green)
-    result = evaluate_pace_model(features, target, groups, n_splits=5)
+    features, _, groups = build_pace_features(green)
+    delta_target = compute_driver_delta_target(green)
+    result = evaluate_pace_model(features, delta_target, groups, n_splits=5)
 
     assert not any(math.isnan(value) for value in result.values())
     assert result["mae_s"] > 0
