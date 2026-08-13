@@ -102,24 +102,39 @@ def test_worse_model_on_shuffled_target_has_lower_r2():
 
 LAP_NUMBER_COEF_S = 0.02
 TYRE_LIFE_COEF_S = 0.01
-SOFT_OFFSET_S = -0.3
-HARD_OFFSET_S = 0.4
+SOFT_BASELINE_S = -0.25
+MEDIUM_BASELINE_S = 0.05
+HARD_BASELINE_S = 0.35
 
 
-def _known_effects_dataset() -> tuple[pd.DataFrame, pd.Series]:
+def _known_effects_dataset(
+    *,
+    include_medium: bool = True,
+) -> tuple[pd.DataFrame, pd.Series]:
     """Dataset minimalista, já no formato de X/y (sem passar por
     `build_pace_features`), com efeitos conhecidos por construção e sem
     ruído — mesmo espírito oráculo de `_synthetic_pace_dataset`, mas focado
     em validar a EXTRAÇÃO de coeficientes, não a avaliação por CV.
+
+    `include_medium=False` reproduz o cenário real do Bahrain 2024: nenhuma
+    volta de "medium" no subconjunto — a coluna existe (sempre existe, ver
+    `build_pace_features`) mas fica inteiramente zerada.
     """
-    lap_numbers = list(range(1, 21)) * 3
-    compounds = (["soft"] * 20) + (["medium"] * 20) + (["hard"] * 20)
-    tyre_lives = [float((i % 8) + 1) for i in range(60)]
-    offsets = {"soft": SOFT_OFFSET_S, "medium": 0.0, "hard": HARD_OFFSET_S}
+    lap_numbers = list(range(1, 21)) * (3 if include_medium else 2)
+    compounds = (
+        (["soft"] * 20) + (["medium"] * 20 if include_medium else []) + (["hard"] * 20)
+    )
+    n = len(compounds)
+    tyre_lives = [float((i % 8) + 1) for i in range(n)]
+    baselines = {
+        "soft": SOFT_BASELINE_S,
+        "medium": MEDIUM_BASELINE_S,
+        "hard": HARD_BASELINE_S,
+    }
 
     target = pd.Series(
         [
-            LAP_NUMBER_COEF_S * ln + TYRE_LIFE_COEF_S * tl + offsets[c]
+            LAP_NUMBER_COEF_S * ln + TYRE_LIFE_COEF_S * tl + baselines[c]
             for ln, tl, c in zip(lap_numbers, tyre_lives, compounds, strict=True)
         ]
     )
@@ -128,6 +143,7 @@ def _known_effects_dataset() -> tuple[pd.DataFrame, pd.Series]:
             "tyre_life": tyre_lives,
             "lap_number": [float(ln) for ln in lap_numbers],
             "compound_soft": [1.0 if c == "soft" else 0.0 for c in compounds],
+            "compound_medium": [1.0 if c == "medium" else 0.0 for c in compounds],
             "compound_hard": [1.0 if c == "hard" else 0.0 for c in compounds],
         }
     )
@@ -143,6 +159,27 @@ def test_pace_coefficients_recovers_known_effects():
 
     assert coefficients["lap_number"] == pytest.approx(LAP_NUMBER_COEF_S, abs=1e-9)
     assert coefficients["tyre_life"] == pytest.approx(TYRE_LIFE_COEF_S, abs=1e-9)
-    assert coefficients["compound_soft"] == pytest.approx(SOFT_OFFSET_S, abs=1e-9)
-    assert coefficients["compound_hard"] == pytest.approx(HARD_OFFSET_S, abs=1e-9)
-    assert coefficients["intercept"] == pytest.approx(0.0, abs=1e-9)
+    assert coefficients["compound_soft"] == pytest.approx(SOFT_BASELINE_S, abs=1e-9)
+    assert coefficients["compound_medium"] == pytest.approx(MEDIUM_BASELINE_S, abs=1e-9)
+    assert coefficients["compound_hard"] == pytest.approx(HARD_BASELINE_S, abs=1e-9)
+
+
+@pytest.mark.unit
+def test_pace_coefficients_stable_when_a_compound_is_absent():
+    """Regressão pro caso real do Bahrain 2024: nenhuma volta de "medium"
+    sobrou depois do filtro de bandeira verde. Com a versão antiga do
+    design (dropar uma referência fixa + intercepto), isso reintroduzia a
+    mesma colinearidade perfeita que já tínhamos corrigido — só que pelos
+    dados, não pelo encoding. Sem intercepto e com as 3 colunas sempre
+    presentes, soft/hard/tyre_life/lap_number continuam estáveis; só o
+    coeficiente de "medium" (ausente) não é significativo — o que é
+    esperado, não uma falha."""
+    features, target = _known_effects_dataset(include_medium=False)
+
+    pipeline = fit_pace_model(features, target)
+    coefficients = pace_coefficients(pipeline, features.columns)
+
+    assert coefficients["lap_number"] == pytest.approx(LAP_NUMBER_COEF_S, abs=1e-9)
+    assert coefficients["tyre_life"] == pytest.approx(TYRE_LIFE_COEF_S, abs=1e-9)
+    assert coefficients["compound_soft"] == pytest.approx(SOFT_BASELINE_S, abs=1e-9)
+    assert coefficients["compound_hard"] == pytest.approx(HARD_BASELINE_S, abs=1e-9)

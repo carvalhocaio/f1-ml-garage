@@ -42,25 +42,23 @@ def test_select_green_flag_laps_drops_inaccurate_laps():
 
 
 @pytest.mark.unit
-def test_build_pace_features_encodes_compound_relative_to_medium():
-    """ "medium" é a referência (fica de fora do one-hot, capturada pelo
-    intercepto do modelo) — só soft/hard viram colunas."""
+def test_build_pace_features_encodes_all_compound_categories():
+    """As 3 colunas sempre aparecem, mesmo se um composto não tiver nenhuma
+    volta no subconjunto recebido — sem isso, o modelo (sem intercepto,
+    ver `models/pace.py`) quebraria o shape entre treino e predição."""
     features, _, _ = build_pace_features(_laps())
 
-    assert "compound_soft" in features.columns
-    assert "compound_hard" in features.columns
-    assert "compound_medium" not in features.columns
+    assert {"compound_soft", "compound_medium", "compound_hard"}.issubset(
+        features.columns
+    )
+    assert (features["compound_hard"] == 0).all()
 
 
 @pytest.mark.unit
-def test_build_pace_features_medium_rows_are_all_zero_reference():
-    laps = _laps(compound=["soft", "medium", "hard", "medium"])
-    features, _, _ = build_pace_features(laps)
-
-    assert features.loc[1, "compound_soft"] == 0
-    assert features.loc[1, "compound_hard"] == 0
-    assert features.loc[3, "compound_soft"] == 0
-    assert features.loc[3, "compound_hard"] == 0
+def test_build_pace_features_one_hot_is_mutually_exclusive():
+    features, _, _ = build_pace_features(_laps())
+    dummy_cols = ["compound_soft", "compound_medium", "compound_hard"]
+    assert (features[dummy_cols].sum(axis=1) == 1).all()
 
 
 @pytest.mark.unit

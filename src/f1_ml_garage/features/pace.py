@@ -15,6 +15,17 @@ from f1_ml_garage.data.laps import filter_accurate_laps
 # sozinho geraria uma matriz de features sem a coluna `compound_hard` — e o
 # modelo quebraria ao prever num conjunto que tenha essa coluna. Fixar as
 # categorias garante o mesmo shape de X sempre, treino ou predição.
+#
+# As 3 colunas ficam SEMPRE presentes (nenhuma é dropada como referência).
+# Uma versão anterior deste código dropava "medium" como referência fixa —
+# parecia certo, mas quebrou na prática: em corridas onde nenhuma volta
+# válida usa "medium" (ex.: Bahrain 2024, estratégia soft→hard→hard), a
+# coluna de referência droppada não tem representação nos dados, e
+# soft+hard voltam a somar 1 em toda linha — a mesma colinearidade que a
+# referência deveria evitar, só que causada pelos dados, não pelo encoding.
+# A correção fica no modelo (`fit_intercept=False`, ver `models/pace.py`),
+# não aqui: com 3 dummies e sem intercepto compartilhado, o design fica
+# robusto independente de quais compostos aparecem no subconjunto.
 COMPOUND_CATEGORIES = ("soft", "medium", "hard")
 
 # "medium" fica de fora do one-hot e vira a referência implícita (capturada
@@ -67,9 +78,7 @@ def build_pace_features(
     volta 3 (os dois baixos).
     """
     compound = pd.Categorical(laps["compound"], categories=COMPOUND_CATEGORIES)
-    compound_dummies = pd.get_dummies(compound, prefix="compound").drop(
-        columns=[f"compound_{COMPOUND_REFERENCE}"]
-    )
+    compound_dummies = pd.get_dummies(compound, prefix="compound")
 
     features = pd.concat(
         [

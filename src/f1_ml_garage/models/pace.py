@@ -18,11 +18,23 @@ DEFAULT_N_SPLITS = 5
 
 def build_pace_pipeline() -> Pipeline:
     """Pipeline do modelo. Um único passo por enquanto (`LinearRegression`),
-    mas fica em `Pipeline` desde já - quando Ridge/Lasso entrarem em cena,
+    mas fica em `Pipeline` desde já — quando Ridge/Lasso entrarem em cena,
     um passo de escala de features (`StandardScaler`) vem antes, e trocar
-    de `LinearRegression` para `Ridge` não deve mudar mais nada ao redor.
+    de `LinearRegression` pra `Ridge` não deve mudar mais nada ao redor.
+
+    `fit_intercept=False` é proposital, não default: `build_pace_features`
+    gera uma dummy pra CADA composto (não droppa nenhuma como referência).
+    Com intercepto, isso seria colinearidade perfeita — mas mais sutil
+    ainda, dropar uma referência fixa e manter o intercepto só funciona se
+    essa referência aparecer nos dados; numa corrida onde ela nunca é usada
+    (ex.: Bahrain 2024 sem laps de "medium"), a colinearidade reaparece via
+    os dados, não o encoding (ver `features/pace.py`). Sem intercepto
+    compartilhado, cada composto carrega seu próprio coeficiente — sempre
+    identificável, mesmo quando algum composto está ausente do subconjunto
+    (só o coeficiente DAQUELE composto ausente fica sem sentido, o que é
+    esperado: não dá pra estimar efeito de um composto nunca observado).
     """
-    return Pipeline([("model", LinearRegression())])
+    return Pipeline([("model", LinearRegression(fit_intercept=False))])
 
 
 def evaluate_pace_model(
@@ -79,23 +91,23 @@ def fit_pace_model(features: pd.DataFrame, target: pd.Series) -> Pipeline:
     return pipeline
 
 
-def pace_coefficients(pipeline: Pipeline, features_names: pd.Index) -> pd.Series:
+def pace_coefficients(pipeline: Pipeline, feature_names: pd.Index) -> pd.Series:
     """Extrai os coeficientes do modelo linear ajustado, indexados pelo
-    nome da feature, mais o intercepto.
+    nome da feature.
 
-    Só é diretamente interpretável porque `build_pace_features` já descarta
-    a categoria de referência do composto (`COMPOUND_REFERENCE`) — sem
-    isso, os coeficientes de composto e o intercepto ficariam
-    matematicamente indeterminados (ver `features/pace.py`).
+    Sem intercepto (ver `build_pace_pipeline`), não há "referência" — o
+    coeficiente de cada dummy de composto já é o efeito absoluto daquele
+    composto, não uma diferença em relação a outro. `tyre_life` e
+    `lap_number` continuam com um único coeficiente compartilhado entre
+    todos os compostos (o modelo assume mesma taxa de degradação e mesmo
+    efeito de combustível/evolução de pista pra qualquer composto — uma
+    simplificação; interações composto×degradação ficam pra uma iteração
+    futura).
 
     Interpretação (alvo é o delta de ritmo em segundos, ver
     `compute_driver_delta_target`): cada coeficiente é quantos segundos por
     unidade daquela feature a volta fica mais lenta (positivo) ou mais
-    rápida (negativo), mantendo as outras features constantes. Pros
-    dummies de composto, é a diferença de ritmo em relação ao composto de
-    referência.
+    rápida (negativo), mantendo as outras features constantes.
     """
     model = pipeline.named_steps["model"]
-    coefficients = pd.Series(model.coef_, index=features_names, name="coef_s")
-    coefficients["intercept"] = model.intercept_
-    return coefficients
+    return pd.Series(model.coef_, index=feature_names, name="coef_s")
