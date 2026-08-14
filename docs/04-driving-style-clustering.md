@@ -70,18 +70,53 @@ número certo pra essa estrutura, ou que o que separa clusters 1/2 é outra
 coisa — combustível/evolução de pista de novo (o mesmo fator que dominou
 o modelo de ritmo antes de controlarmos por ele), não estilo de pilotagem.
 
+## Iteração 4 — GMM/EM decide `k` objetivamente, não eu
+
+Até aqui, `n_clusters=3` foi uma escolha arbitrária (o padrão do módulo,
+nunca justificado). Implementado `fit_gmm` + `select_n_components_by_bic`
+(BIC — Bayesian Information Criterion, penaliza complexidade contra
+qualidade de ajuste) pra decidir `k` objetivamente em vez de fixar de
+antemão.
+
+Resultado real (mesma telemetria filtrada + relativa ao piloto da
+iteração 3): BIC cai monoticamente de `k=2` até `k=6` testado — **nunca
+melhora depois de 2**. Confirma a suspeita registrada na iteração 3: os
+clusters 1/2 do `k=3` eram uma divisão artificial de uma estrutura que só
+tem 2 grupos de verdade.
+
+Com `k=2`:
+
+
+``` 
+          soft  hard  total  % soft
+cluster 0 139   151   290     47.9%
+cluster 1 138   578   716     19.3%
+```
+
+Taxa geral: 27.5%. Contraste bem mais nítido que o `k=3` anterior (onde
+dois dos três clusters eram quase idênticos): cluster 0 fica perto de
+meio-a-meio (quase o dobro da taxa geral de soft), cluster 1 bem mais
+hard-dominante que a média.
+
+Confiança média do GMM (probabilidade do componente mais provável) ficou
+em **0.828** — boa, mas longe do >0.95 que o dataset sintético (separável
+por construção) atinge nos testes. Leitura honesta: existe uma estrutura
+real de 2 grupos nos dados, razoavelmente clara, mas com ambiguidade
+genuína na fronteira entre eles — esperado em dado de corrida real, e uma
+leitura mais confiável do que "encontrar" 3 clusters bem definidos que na
+prática eram 1 real + 1 dividido ao meio sem motivo.
+
 ## Próximos passos possíveis
 
-- Testar `k=2` — a estrutura observada (soft concentrado vs. resto
-  homogêneo) pode caber melhor em 2 clusters que 3.
-- Investigar o que separa clusters 1/2: cruzar contra `lap_number` (proxy
-  de combustível/evolução de pista, já validado como sinal forte no
-  modelo de ritmo) em vez de só `compound`.
-- Método do cotovelo ou silhouette por vários `k` — escolher `n_clusters`
-  sistematicamente em vez de fixar 3 de antemão.
-- DBSCAN como alternativa ao k-means — não assume clusters esféricos nem
-  exige definir `k` de antemão, pode revelar estrutura diferente.
-- GMM/EM — em vez de atribuição rígida a um cluster, probabilidade de
-  pertencer a cada grupo; pode capturar melhor voltas "de transição"
-  (ex.: pneu perto do fim da vida, começando a se comportar como outro
-  composto).
+- Investigar diretamente o que caracteriza cluster 0 vs 1 (não só
+  composto) — olhar `lap_number`/`tyre_life` médios de cada grupo, testar
+  se bate com a hipótese de combustível/evolução de pista.
+- Repetir esse fluxo (BIC → k → GMM) noutra corrida e comparar se a
+  estrutura de 2 grupos se mantém, ou se é específica do Bahrain.
+- t-SNE/UMAP pra visualizar a fronteira entre os dois componentes — os
+  ~17% de confiança "perdida" (0.828 vs ~1.0) provavelmente vêm de um
+  conjunto específico de voltas na fronteira; visualizar ajudaria a ver
+  quais.
+- DBSCAN como comparação — não assume forma gaussiana nem número fixo de
+  clusters, pode confirmar (ou contestar) a estrutura de 2 grupos por um
+  caminho totalmente diferente.
