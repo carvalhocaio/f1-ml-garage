@@ -143,5 +143,6 @@ pro caso de uso, não é uma resposta absoluta.
   Silverstone/Barcelona).
 - Ajustar hiperparâmetros (`max_depth`, `C`) em vez de usar os padrões —
   a comparação acima ainda não é definitiva nesse sentido.
-- SVM + kernels: classificar composto de pneu a partir de telemetria — a
-  peça que falta do Módulo 2.
+
+O resto do Módulo 2 (SVM+kernels, classificar composto via telemetria)
+está completo — ver `docs/03-tyre-model.md`.

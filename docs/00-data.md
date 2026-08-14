@@ -85,14 +85,20 @@ segundos, e não filtra nenhum piloto (inclusive quem abandonou continua na
 saída — descartar essas linhas destruiria justamente o sinal que um modelo
 de DNF precisa aprender).
 
-`dnf` é a única coluna genuinamente derivada do módulo. Em vez de aceitar o
-critério do FastF1 (`fastf1.core.DriverResult.dnf`) como está, reimplementamos
-vetorizado com regex (`^\+\d+\s*Laps?$`) em vez do slice fixo
-`Status[3:6] == "Lap"` que a biblioteca usa internamente — esse slice
-assume um único dígito no número de voltas de atraso e erra silenciosamente
-para atrasos de 10 voltas ou mais (`"+10 Laps"[3:6]` é `" La"`, não
-`"Lap"`, então o FastF1 classificaria esse piloto como DNF por engano).
-Coberto por teste (`test_double_digit_lapped_driver_is_not_dnf`).
+`dnf` é a única coluna genuinamente derivada do módulo — `True` quando
+`status` não está em `_FINISHED_STATUSES` (`{"Finished", "Lapped"}`).
+Allowlist de propósito, não denylist: um status novo e desconhecido conta
+como DNF por padrão, mais seguro que assumir "terminou" sem saber.
+
+Essa é já a segunda versão da lógica. A primeira tentava replicar o
+critério do FastF1 (`fastf1.core.DriverResult.dnf`) via regex pro formato
+"+N Lap(s)" que a documentação oficial lista como exemplo — só que a
+versão instalada do FastF1 nunca usa esse formato de verdade (usa strings
+categóricas simples: `"Finished"`, `"Lapped"`, `"Retired"`, `"Did not
+start"`, `"Disqualified"`). Isso inflava a taxa de "DNF" pra ~40% numa
+temporada inteira (o valor real fica em 10-20%) — todo piloto "Lapped"
+(terminou, só que voltas atrás) virava DNF por engano. Diagnóstico
+completo, com os números reais, em `docs/02-dnf-model.md` (seção "Bug 1").
 
 ## Telemetria (`telemetry.py`)
 
@@ -123,6 +129,21 @@ externamente via `enable_cache()`. `load_driver_telemetry` usa
 `Laps.pick_drivers` (não `pick_driver`, singular — depreciado desde a 3.1.0
 do FastF1) para filtrar as voltas de um piloto antes de puxar a telemetria
 combinada de todas elas.
+
+Dois loaders adicionados depois, pros módulos de ML que precisavam de mais
+volume de dado que uma sessão só dá:
+
+- `load_season_results` — concatena a classificação de várias corridas de
+  uma temporada (`round_number`/`event_name` marcados em cada linha).
+  Necessário pro modelo de DNF: uma corrida só tem ~20 pilotos e poucos
+  abandonos, amostra pequena demais pra treinar ou avaliar nada
+  (`docs/02-dnf-model.md`).
+- `load_session_telemetry` — telemetria de TODOS os pilotos de uma sessão,
+  concatenada, com `driver` marcado (informação externa ao payload do
+  FastF1). Volume bem maior que os outros loaders — telemetria é
+  amostrada em alta frequência. Usado pelo SVM de composto
+  (`docs/03-tyre-model.md`) e pelo clustering de estilo de pilotagem
+  (`docs/04-driving-style-clustering.md`).
 
 ## Utilitário compartilhado (`timeutils.py`)
 

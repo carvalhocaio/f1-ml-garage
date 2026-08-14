@@ -44,6 +44,13 @@ resultado de corrida)
 accuracy=0.666 precision_macro=0.642 recall_macro=0.640 f1_macro=0.623
 ```
 
+> **Nota:** esses números são de antes de `filter_to_clean_laps` (filtro de
+> bandeira verde) entrar no pipeline de telemetria — ver
+> `docs/04-driving-style-clustering.md`, iteração 2. Com o filtro, a
+> accuracy caiu ligeiramente pra 0.653 (precision/recall/f1 macro não
+> foram remedidos formalmente); o efeito foi pequeno, não invalida a
+> leitura abaixo.
+
 Accuracy sozinha é enganosa de novo: com 791 vs 338, só prever "hard"
 sempre já dá ~70% — nosso 66.6% é MENOR que esse baseline ingênuo, porque
 `class_weight="balanced"` troca accuracy bruta por desempenho mais

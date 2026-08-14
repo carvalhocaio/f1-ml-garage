@@ -122,6 +122,6 @@ o candidato natural pra investigar isso.
 - Rodar contra outras corridas/circuitos e comparar os coeficientes — o
   efeito de combustível deveria ser relativamente estável entre pistas; o
   de composto, não (depende do carro/pneu daquele ano específico).
-- Seguir pro resto do Módulo 2: regressão logística (undercut/overcut),
-  SVM+kernels (classificar composto pela telemetria), árvores de decisão
-  (DNF).
+
+O resto do Módulo 2 (regressão logística, árvore de decisão, SVM+kernels)
+está completo — ver `docs/02-dnf-model.md` e `docs/03-tyre-model.md`.
