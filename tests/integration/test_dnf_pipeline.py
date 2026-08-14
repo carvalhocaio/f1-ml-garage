@@ -15,7 +15,8 @@ import pytest
 
 from f1_ml_garage.data.session import enable_cache, load_season_results
 from f1_ml_garage.features.dnf import build_dnf_features
-from f1_ml_garage.models.dnf import evaluate_dnf_model
+from f1_ml_garage.models.dnf import build_dnf_logistic_pipeline, build_dnf_tree_pipeline
+from f1_ml_garage.models.evaluation import evaluate_classifier
 
 pytestmark = pytest.mark.integration
 
@@ -24,14 +25,30 @@ SKIP_REASON = "defina F1_ML_GARAGE_RUN_INTEGRATION=1 para bater na API real do F
 
 
 @pytest.mark.skipif(not RUN_INTEGRATION, reason=SKIP_REASON)
-def test_dnf_pipeline_runs_end_to_end_on_real_season_slice():
+def test_dnf_tree_pipeline_runs_end_to_end_on_real_season_slice():
     enable_cache()
     results = load_season_results(2024, rounds=[1, 2, 3, 4, 5])
     assert len(results) > 0
     assert {"round_number", "event_name"}.issubset(results.columns)
 
     features, target, groups = build_dnf_features(results)
-    result = evaluate_dnf_model(features, target, groups, n_splits=3)
+    result = evaluate_classifier(
+        build_dnf_tree_pipeline(), features, target, groups, n_splits=3
+    )
+
+    assert not any(math.isnan(value) for value in result.values())
+    assert 0.0 <= result["dnf_rate"] <= 1.0
+
+
+@pytest.mark.skipif(not RUN_INTEGRATION, reason=SKIP_REASON)
+def test_dnf_logistic_pipeline_runs_end_to_end_on_real_season_slice():
+    enable_cache()
+    results = load_season_results(2024, rounds=[1, 2, 3, 4, 5])
+
+    features, target, groups = build_dnf_features(results)
+    result = evaluate_classifier(
+        build_dnf_logistic_pipeline(), features, target, groups, n_splits=3
+    )
 
     assert not any(math.isnan(value) for value in result.values())
     assert 0.0 <= result["dnf_rate"] <= 1.0

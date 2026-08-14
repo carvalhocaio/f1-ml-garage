@@ -1,19 +1,17 @@
-"""Árvore de decisão para prever DNF (Módulo 2 — aprendizado supervisionado).
+"""Classificadores de DNF (Módulo 2 — aprendizado supervisionado).
 
-Dois pontos do currículo se encontram aqui, não só "árvore de decisão":
-dados desbalanceados (DNF é raro — normalmente <20% das largadas) e
-bias-variance (uma árvore sem limite de profundidade decora o treino fácil,
-principalmente com poucas features e pouca amostra).
+Dois modelos pro mesmo problema — árvore de decisão e regressão logística
+— pra comparar diretamente. Dois pontos do currículo se encontram aqui além
+disso: dados desbalanceados (DNF é raro) e bias-variance (uma árvore sem
+limite de profundidade decora o treino fácil, com poucas features e pouca
+amostra).
 """
 
-import numpy as np
-import pandas as pd
-from sklearn.metrics import f1_score, make_scorer, precision_score, recall_score
-from sklearn.model_selection import StratifiedGroupKFold, cross_validate
+from sklearn.compose import ColumnTransformer
+from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 from sklearn.tree import DecisionTreeClassifier
-
-DEFAULT_N_SPLITS = 5
 
 # Profundidade rasa de propósito: com ~10-15 features (grid_position +
 # times one-hot) e algumas centenas de linhas por temporada, uma árvore
@@ -25,24 +23,14 @@ DEFAULT_MAX_DEPTH = 4
 # Primeira técnica de dado desbalanceado a tentar, antes de qualquer coisa
 # mais sofisticada (SMOTE, undersampling): pesar as classes pelo inverso da
 # frequência. `class_weight="balanced"` faz isso automaticamente a partir
-# do `y` de treino, sem precisar calcular a proporção na mão.
+# do `y` de treino, sem precisar calcular a proporção na mão. Vale pros
+# dois modelos, não só a árvore.
 DEFAULT_CLASS_WEIGHT = "balanced"
 
-# Com classe rara e uma árvore rasa, algum fold pode acabar com um modelo
-# que não prevê NENHUM positivo (comum na versão sem peso de classe) —
-# precision vira 0/0, matematicamente indefinida. `zero_division=0` deixa
-# esse caso explícito (vira 0.0) em vez de um warning do sklearn por baixo
-# dos panos: um modelo que não arrisca nenhuma previsão positiva não
-# merece crédito nenhum de precision.
-_SCORING = {
-    "accuracy": "accuracy",
-    "precision": make_scorer(precision_score, zero_division=0),
-    "recall": make_scorer(recall_score, zero_division=0),
-    "f1": make_scorer(f1_score, zero_division=0),
-}
+DEFAULT_C = 1.0
 
 
-def build_dnf_pipeline(
+def build_dnf_tree_pipeline(
     max_depth: int = DEFAULT_MAX_DEPTH,
     class_weight: str | None = DEFAULT_CLASS_WEIGHT,
 ) -> Pipeline:
@@ -60,43 +48,45 @@ def build_dnf_pipeline(
     )
 
 
-def evaluate_dnf_model(
-    features: pd.DataFrame,
-    target: pd.Series,
-    groups: pd.Series,
-    n_splits: int = DEFAULT_N_SPLITS,
-    max_depth: int = DEFAULT_MAX_DEPTH,
+def build_dnf_logistic_pipeline(
     class_weight: str | None = DEFAULT_CLASS_WEIGHT,
-) -> dict[str, float]:
-    """Avalia o classificador de DNF com `StratifiedGroupKFold`.
+    C: float = DEFAULT_C,  # noqa: N803 -- nome padrão do sklearn (LogisticRegression)
+) -> Pipeline:
+    """Regressão logística pro mesmo problema de DNF.
 
-    Precisa das duas coisas ao mesmo tempo, não uma ou outra:
-    `GroupKFold` sozinho (agrupado por piloto) não garante que cada fold
-    tenha uma proporção de DNF parecida — com uma classe já rara, um fold
-    "ruim" pode ficar com 0 ou 1 DNF só, e a métrica desse fold vira
-    ruído. `StratifiedKFold` sozinho não evita vazar o mesmo piloto entre
-    treino e teste. `StratifiedGroupKFold` faz as duas coisas.
+    `fit_intercept=False` pelo mesmo motivo do modelo de ritmo
+    (`features/pace.py`/`models/pace.py`): `team` entra como one-hot
+    COMPLETO (todas as equipes, nenhuma referência dropada) — com
+    intercepto, a soma das colunas de time seria sempre 1, colinear com o
+    intercepto. Sem ele, cada time carrega seu próprio coeficiente (a base
+    de log-odds daquele time), do mesmo jeito que cada composto carrega o
+    seu em `pace.py`. Mesmo bug, mesma correção, aplicada de propósito
+    desta vez em vez de descoberta depois.
 
-    Reporta accuracy, precision, recall e F1 (classe DNF=True) — não só
-    accuracy: com DNF raro, "sempre prever que termina" já acerta a
-    maioria das vezes e teria accuracy alta parecendo um modelo bom, sem
-    detectar DNF nenhum. `recall` é a métrica que mostraria isso quebrado.
+    `grid_position` é escalado (`StandardScaler`) antes do modelo — é a
+    única feature contínua, numa escala bem diferente das dummies de
+    `team` (1-20 vs 0/1); sem escalar, a penalização L2 (`C`) trataria
+    `grid_position` de forma desproporcional só pela escala, não pelo
+    efeito real. As dummies de `team` passam sem escala
+    (`remainder="passthrough"`), preservando a lógica de "cada time tem seu
+    próprio baseline" que o `fit_intercept=False` pressupõe.
     """
-    pipeline = build_dnf_pipeline(max_depth=max_depth, class_weight=class_weight)
-    cv = StratifiedGroupKFold(n_splits=n_splits)
-    scores = cross_validate(
-        pipeline,
-        features,
-        target,
-        groups=groups,
-        cv=cv,
-        scoring=_SCORING,
+    preprocessing = ColumnTransformer(
+        transformers=[("scale_grid", StandardScaler(), ["grid_position"])],
+        remainder="passthrough",
     )
-
-    return {
-        "accuracy": float(np.mean(scores["test_accuracy"])),
-        "precision": float(np.mean(scores["test_precision"])),
-        "recall": float(np.mean(scores["test_recall"])),
-        "f1": float(np.mean(scores["test_f1"])),
-        "dnf_rate": float(target.mean()),
-    }
+    return Pipeline(
+        [
+            ("preprocessing", preprocessing),
+            (
+                "model",
+                LogisticRegression(
+                    class_weight=class_weight,
+                    C=C,
+                    fit_intercept=False,
+                    random_state=0,
+                    max_iter=1000,
+                ),
+            ),
+        ]
+    )

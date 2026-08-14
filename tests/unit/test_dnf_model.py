@@ -2,7 +2,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from f1_ml_garage.models.dnf import evaluate_dnf_model
+from f1_ml_garage.models.dnf import build_dnf_logistic_pipeline, build_dnf_tree_pipeline
+from f1_ml_garage.models.evaluation import evaluate_classifier
 
 N_DRIVERS = 20
 RACES_PER_DRIVER = 6
@@ -16,7 +17,9 @@ def _separable_dnf_dataset() -> tuple[pd.DataFrame, pd.Series, pd.Series]:
     construção: DNF se o grid é >= 18 OU o time é "TeamX". Serve de
     oráculo — uma árvore rasa o suficiente pra representar um OR de duas
     condições (profundidade 2 já basta) tem que recuperar isso quase
-    perfeitamente.
+    perfeitamente. Regressão logística, sendo uma fronteira suave (não
+    cortes exatos), não tem obrigação de chegar a 1.0 no mesmo padrão —
+    ver `test_logistic_recovers_known_separable_pattern`.
     """
     rows = []
     for driver_idx in range(N_DRIVERS):
@@ -42,10 +45,12 @@ def _separable_dnf_dataset() -> tuple[pd.DataFrame, pd.Series, pd.Series]:
 
 
 @pytest.mark.unit
-def test_recovers_known_separable_pattern():
+def test_tree_recovers_known_separable_pattern():
     features, target, groups = _separable_dnf_dataset()
 
-    result = evaluate_dnf_model(features, target, groups, n_splits=4)
+    result = evaluate_classifier(
+        build_dnf_tree_pipeline(), features, target, groups, n_splits=4
+    )
 
     assert result["recall"] == pytest.approx(1.0, abs=1e-6)
     assert result["precision"] == pytest.approx(1.0, abs=1e-6)
@@ -53,9 +58,28 @@ def test_recovers_known_separable_pattern():
 
 
 @pytest.mark.unit
+def test_logistic_recovers_known_separable_pattern():
+    """Regressão logística ajusta uma fronteira suave (sigmoide), não
+    cortes exatos como a árvore — não tem por que chegar a 1.0 num padrão
+    de regra dura (OR de duas condições), mas tem que capturar a maior
+    parte dele."""
+    features, target, groups = _separable_dnf_dataset()
+
+    result = evaluate_classifier(
+        build_dnf_logistic_pipeline(), features, target, groups, n_splits=4
+    )
+
+    assert result["recall"] > 0.85
+    assert result["precision"] > 0.6
+    assert result["f1"] > 0.75
+
+
+@pytest.mark.unit
 def test_returns_expected_metric_keys():
     features, target, groups = _separable_dnf_dataset()
-    result = evaluate_dnf_model(features, target, groups, n_splits=4)
+    result = evaluate_classifier(
+        build_dnf_tree_pipeline(), features, target, groups, n_splits=4
+    )
 
     assert set(result.keys()) == {
         "accuracy",
@@ -102,11 +126,19 @@ def test_class_weight_balanced_improves_recall_on_imbalanced_data():
     """
     features, target, groups = _noisy_imbalanced_dataset()
 
-    balanced = evaluate_dnf_model(
-        features, target, groups, n_splits=5, class_weight="balanced"
+    balanced = evaluate_classifier(
+        build_dnf_tree_pipeline(class_weight="balanced"),
+        features,
+        target,
+        groups,
+        n_splits=5,
     )
-    unweighted = evaluate_dnf_model(
-        features, target, groups, n_splits=5, class_weight=None
+    unweighted = evaluate_classifier(
+        build_dnf_tree_pipeline(class_weight=None),
+        features,
+        target,
+        groups,
+        n_splits=5,
     )
 
     assert balanced["recall"] > 0.5
