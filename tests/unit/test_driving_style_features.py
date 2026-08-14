@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -107,3 +108,97 @@ def test_relative_to_driver_false_is_still_the_default():
     assert list(features["mean_speed_kmh"]) == pytest.approx(
         [295.0, 300.0, 250.0, 255.0]
     )
+
+
+def _detrend_dataset(*, confounded_with_time: bool) -> pd.DataFrame:
+    """2 pilotos, baselines diferentes, tendência linear de +0.5 km/h por
+    volta (proxy de combustível/evolução de pista), e um efeito de
+    composto de +3.0 km/h pro soft.
+
+    `confounded_with_time=True` reproduz a situação real (estratégia
+    amarra composto a fase da corrida — soft nas voltas 1-10, hard nas
+    11-20, `docs/04-driving-style-clustering.md` iteração 5).
+    `confounded_with_time=False` embaralha os compostos, desligando essa
+    confusão de propósito — serve de oráculo pra confirmar que o detrend
+    recupera o efeito quase inteiro quando não há confusão temporal.
+    """
+    rng = np.random.default_rng(1)
+    rows = []
+    for driver, baseline in [("VER", 290.0), ("SAR", 250.0)]:
+        if confounded_with_time:
+            compounds = ["soft"] * 10 + ["hard"] * 10
+        else:
+            compounds = ["soft"] * 10 + ["hard"] * 10
+            rng.shuffle(compounds)
+        for lap in range(1, 21):
+            compound = compounds[lap - 1]
+            offset = 3.0 if compound == "soft" else 0.0
+            value = baseline + 0.5 * lap + offset
+            rows.append(
+                {
+                    "driver": driver,
+                    "lap_number": lap,
+                    "compound": compound,
+                    **{column: value for column in FEATURE_COLUMNS},
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+@pytest.mark.unit
+def test_detrend_lap_number_removes_correlation_with_lap_number():
+    summary = _detrend_dataset(confounded_with_time=True)
+    features, metadata = build_driving_style_features(summary, detrend_lap_number=True)
+
+    correlation = features["mean_speed_kmh"].corr(metadata["lap_number"])
+    assert correlation == pytest.approx(0.0, abs=1e-9)
+
+
+@pytest.mark.unit
+def test_detrend_lap_number_each_driver_residuals_have_zero_mean():
+    """Resíduo de regressão com intercepto sempre soma zero — mesma
+    garantia que `relative_to_driver` dá, por outro caminho."""
+    summary = _detrend_dataset(confounded_with_time=True)
+    features, metadata = build_driving_style_features(summary, detrend_lap_number=True)
+
+    totals = (
+        features.assign(driver=metadata["driver"])
+        .groupby("driver")["mean_speed_kmh"]
+        .sum()
+    )
+    assert totals.to_numpy() == pytest.approx([0.0, 0.0], abs=1e-6)
+
+
+@pytest.mark.unit
+def test_detrend_lap_number_recovers_most_of_signal_when_not_confounded_with_time():
+    """Composto embaralhado (sem relação com `lap_number`) -> o detrend
+    deveria recuperar quase o efeito completo injetado (+3.0 pro soft)."""
+    summary = _detrend_dataset(confounded_with_time=False)
+    features, metadata = build_driving_style_features(summary, detrend_lap_number=True)
+
+    by_compound = (
+        features.assign(compound=metadata["compound"])
+        .groupby("compound")["mean_speed_kmh"]
+        .mean()
+    )
+    spread = by_compound["soft"] - by_compound["hard"]
+    assert spread > 2.5
+
+
+@pytest.mark.unit
+def test_detrend_lap_number_attenuates_signal_when_confounded_with_time():
+    """Limitação real e documentada: quando composto e `lap_number` estão
+    confundidos (igual estratégia de corrida de verdade), o detrend linear
+    NÃO recupera o efeito completo — parte é absorvida pela reta ajustada.
+    Confirma que sobra sinal (não é zero), mas bem menor que o efeito
+    verdadeiro de +3.0."""
+    summary = _detrend_dataset(confounded_with_time=True)
+    features, metadata = build_driving_style_features(summary, detrend_lap_number=True)
+
+    by_compound = (
+        features.assign(compound=metadata["compound"])
+        .groupby("compound")["mean_speed_kmh"]
+        .mean()
+    )
+    spread = by_compound["soft"] - by_compound["hard"]
+    assert 0.0 < spread < 1.5
