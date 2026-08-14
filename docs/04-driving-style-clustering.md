@@ -141,18 +141,56 @@ genuinamente independente de fase da corrida, seria preciso controlar por
 diferentes, coeficientes diferentes) em vez de deixar um contaminar o
 outro.
 
+## Iteração 6 — controlando por fase da corrida: sobra sinal, mas menor
+
+Implementado `build_driving_style_features(..., detrend_lap_number=True)`:
+regressão linear de cada feature contra `lap_number`, separada por
+piloto, usando os resíduos — remove baseline do piloto E tendência ao
+longo da corrida numa única operação (resíduo de regressão com intercepto
+sempre tem média zero).
+
+Testado primeiro com dados sintéticos, dois cenários: composto
+independente de `lap_number` (recupera ~98% do efeito injetado) e
+composto confundido com `lap_number` — igual estratégia real, soft nas
+voltas 1-10, hard nas 11-20 (recupera só ~25% do efeito injetado). O
+detrend linear não separa perfeitamente um efeito tipo "degrau" (troca de
+composto) de uma tendência contínua quando os dois são correlacionados no
+tempo — parte do efeito real vaza pra reta ajustada. Limitação conhecida
+e documentada antes de rodar contra dado real.
+
+Resultado real (Bahrain 2024), BIC ainda prefere `k=2`:
+
+```
+                        relative_to_driver  detrend_lap_number
+cluster soft-leaning |  47.9%               39.9%
+cluster hard-leaning |  19.3%               23.5%
+spread               |  28.6 pp             16.4 pp
+```
+
+O contraste caiu quase pela metade — consistente com a atenuação prevista
+pelo teste sintético (confundimento real entre composto e fase da
+corrida, mesma direção do cenário B). Mas não zerou: o BIC continua
+preferindo `k=2` a `k=1`, e a diferença de composição de composto entre
+os grupos continua na mesma direção.
+
+**Leitura:** existe sinal de composto na telemetria que não é só fase da
+corrida disfarçada — sobrevive mesmo controlando por `lap_number`. Mas é
+mais modesto do que a iteração 3 sugeria; boa parte daquele contraste de
+~29 pontos percentuais era mesmo confundimento temporal.
+
 ## Próximos passos possíveis
 
-- Controlar por `lap_number` também (não só por piloto) antes de
-  clusterizar — a hipótese natural depois da iteração 5, pra ver se sobra
-  algum sinal de composto/estilo independente de fase da corrida.
-- Repetir esse fluxo (BIC → k → GMM) noutra corrida com estratégia
-  diferente e comparar se a divisão continua batendo com stint/fase da
-  corrida, ou é específica do Bahrain.
+- Repetir esse fluxo completo (relative_to_driver → detrend_lap_number →
+  BIC → GMM) noutra corrida com estratégia diferente — ver se o sinal
+  residual de composto (16.4 pp) se mantém, cresce ou desaparece, e se a
+  divisão continua batendo com stint/fase da corrida.
 - t-SNE/UMAP pra visualizar a fronteira entre os dois componentes — os
-  ~17% de confiança "perdida" (0.828 vs ~1.0) provavelmente vêm de um
-  conjunto específico de voltas na fronteira; visualizar ajudaria a ver
-  quais.
+  ~17% de confiança "perdida" (0.828 vs ~1.0, iteração 4) provavelmente
+  vêm de um conjunto específico de voltas na fronteira; visualizar
+  ajudaria a ver quais.
 - DBSCAN como comparação — não assume forma gaussiana nem número fixo de
   clusters, pode confirmar (ou contestar) a estrutura de 2 grupos por um
   caminho totalmente diferente.
+- Um modelo não-linear de detrend (ex.: spline em vez de reta) capturaria
+  melhor um efeito tipo "degrau" no meio da tendência de `lap_number` —
+  poderia recuperar mais do sinal atenuado na iteração 6.
