@@ -49,9 +49,9 @@ sim:
 
 ```
             soft  hard  total  % soft
-cluster 0   111   76    187     59.4%
-cluster 1   81    315   396     20.5%
-cluster 2   85    338   423     20.1%
+cluster 0 | 111   76    187    59.4%
+cluster 1 | 81    315   396    20.5%
+cluster 2 | 85    338   423    20.1%
 ```
 
 Taxa geral de soft na corrida: ~27.5%. **Cluster 0 concentra o dobro
@@ -86,11 +86,10 @@ tem 2 grupos de verdade.
 
 Com `k=2`:
 
-
-``` 
-          soft  hard  total  % soft
-cluster 0 139   151   290     47.9%
-cluster 1 138   578   716     19.3%
+```
+            soft  hard  total  % soft
+cluster 0 | 139   151   290   47.9%
+cluster 1 | 138   578   716   19.3%
 ```
 
 Taxa geral: 27.5%. Contraste bem mais nítido que o `k=3` anterior (onde
@@ -106,13 +105,50 @@ genuína na fronteira entre eles — esperado em dado de corrida real, e uma
 leitura mais confiável do que "encontrar" 3 clusters bem definidos que na
 prática eram 1 real + 1 dividido ao meio sem motivo.
 
+## Iteração 5 — o que de fato separa os 2 clusters: fase da corrida, não estilo
+
+Cruzando os clusters do GMM (`k=2`, iteração 4) contra `lap_number`,
+`tyre_life` e `stint` (via merge com `laps`, não vem nos metadados de
+`build_driving_style_features`):
+
+```
+            lap_number  tyre_life  stint (moda)
+cluster 0 | 23.0        9.7         1
+cluster 1 | 32.8        11.5        3
+```
+
+O cluster 0 é essencialmente **stint 1** (início de corrida); o cluster 1
+é essencialmente **stint 3** (fim de corrida). Isso explica a diferença de
+composto (47.9% vs 19.3% soft, iteração 4) sem precisar de "estilo de
+pilotagem": a estratégia comum em Bahrain 2024 era abrir em soft/medium e
+fechar em hard, então stint 1 naturalmente concentra mais soft e stint 3
+mais hard — composto aparece correlacionado com o cluster só porque a
+estratégia amarra os dois, não porque a telemetria capture a diferença de
+comportamento do pneu em si.
+
+Isso explica também por que a normalização por piloto (iteração 3) não
+resolveu isso: ela remove a diferença de BASELINE entre carros, mas não
+remove a tendência de "mais rápido ao longo da própria corrida" — o
+efeito de combustível/evolução de pista continua inteiro dentro dos dados
+centralizados por piloto. É o mesmo `lap_number` que dominou o modelo de
+ritmo (R² = 0.81, `docs/01-pace-model.md`), reaparecendo aqui disfarçado
+de "estrutura de estilo de pilotagem".
+
+**Consequência prática:** pra testar se existe sinal de composto/estilo
+genuinamente independente de fase da corrida, seria preciso controlar por
+`lap_number` também, não só por piloto — mesmo espírito de como
+`pace.py` separou o efeito de `tyre_life` do de `lap_number` (features
+diferentes, coeficientes diferentes) em vez de deixar um contaminar o
+outro.
+
 ## Próximos passos possíveis
 
-- Investigar diretamente o que caracteriza cluster 0 vs 1 (não só
-  composto) — olhar `lap_number`/`tyre_life` médios de cada grupo, testar
-  se bate com a hipótese de combustível/evolução de pista.
-- Repetir esse fluxo (BIC → k → GMM) noutra corrida e comparar se a
-  estrutura de 2 grupos se mantém, ou se é específica do Bahrain.
+- Controlar por `lap_number` também (não só por piloto) antes de
+  clusterizar — a hipótese natural depois da iteração 5, pra ver se sobra
+  algum sinal de composto/estilo independente de fase da corrida.
+- Repetir esse fluxo (BIC → k → GMM) noutra corrida com estratégia
+  diferente e comparar se a divisão continua batendo com stint/fase da
+  corrida, ou é específica do Bahrain.
 - t-SNE/UMAP pra visualizar a fronteira entre os dois componentes — os
   ~17% de confiança "perdida" (0.828 vs ~1.0) provavelmente vêm de um
   conjunto específico de voltas na fronteira; visualizar ajudaria a ver
