@@ -99,3 +99,25 @@ def filter_accurate_laps(laps: pd.DataFrame) -> pd.DataFrame:
         & laps["lap_time_s"].notna()
     )
     return laps.loc[mask].reset_index(drop=True)
+
+
+def select_green_flag_laps(laps: pd.DataFrame) -> pd.DataFrame:
+    """Restringe a voltas cronometradas confiáveis (`filter_accurate_laps`)
+    E sob bandeira verde limpa (`track_status == "1"`, sem nenhuma outra
+    flag concatenada na mesma volta — amarela, safety car, VSC).
+
+    Esse é o subconjunto onde tempo de volta (e telemetria da volta)
+    reflete só ritmo de carro/pneu/piloto, sem contaminação de um
+    incidente de pista, pit lane sob limite de velocidade, ou bunching
+    atrás de safety car. Usado tanto por `features/pace.py` (tempo de
+    volta) quanto por qualquer consumidor de telemetria por volta
+    (`features/telemetry_summary.py`) — mesma noção de "volta limpa"
+    serve pros dois.
+
+    Mora aqui (não em `features/pace.py`, onde nasceu) porque é
+    fundamentalmente um filtro de qualidade de dado sobre voltas, não algo
+    específico de modelagem de ritmo — vários módulos de feature
+    engineering diferentes precisam da mesma noção de "volta limpa".
+    """
+    accurate = filter_accurate_laps(laps)
+    return accurate.loc[accurate["track_status"] == "1"].reset_index(drop=True)

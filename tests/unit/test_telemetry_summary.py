@@ -2,6 +2,7 @@ import pandas as pd
 import pytest
 
 from f1_ml_garage.features.telemetry_summary import (
+    filter_to_clean_laps,
     summarize_lap_telemetry,
     tag_telemetry_with_lap,
 )
@@ -119,3 +120,46 @@ def test_summarize_lap_telemetry_one_row_per_driver_lap():
     # própria nesse fixture pequeno, mas a 1 e a 3 sim)
     unique_lap_count = summary[["driver", "lap_number"]].drop_duplicates().shape[0]
     assert len(summary) == unique_lap_count
+
+
+def _laps_with_quality_columns(**overrides: object) -> pd.DataFrame:
+    """Mesmas 3 voltas de `_laps()`, mas com as colunas que
+    `select_green_flag_laps` precisa (`lap_time_s`, `is_accurate`,
+    `deleted`, `track_status`) — só usadas pelos testes de
+    `filter_to_clean_laps`.
+    """
+    base = _laps().assign(
+        lap_time_s=[88.0, 89.0, 90.0],
+        is_accurate=[True, True, True],
+        deleted=[False, False, False],
+        track_status=["1", "1", "1"],
+    )
+    return base.assign(**overrides)
+
+
+@pytest.mark.unit
+def test_filter_to_clean_laps_drops_sample_instead_of_reassigning_it():
+    """A volta 2 (bandeira amarela) tem que SUMIR — a amostra que
+    pertencia a ela não pode "vazar" pra volta 3, que é o bug que um
+    filtro feito antes do merge_asof causaria (ver docstring da função)."""
+    laps = _laps_with_quality_columns(track_status=["1", "2", "1"])
+    tagged = tag_telemetry_with_lap(_telemetry(), laps)
+
+    clean = filter_to_clean_laps(tagged, laps)
+
+    assert list(clean["lap_number"].unique()) == [1, 3]
+    # a amostra de 150s (volta 2) sumiu, não virou volta 3
+    assert 150.0 not in clean["session_time_s"].tolist()
+    # a volta 3 continua com exatamente as 2 amostras que já eram dela
+    lap3_samples = clean.loc[clean["lap_number"] == 3, "session_time_s"].tolist()
+    assert lap3_samples == [200.0, 270.0]
+
+
+@pytest.mark.unit
+def test_filter_to_clean_laps_drops_inaccurate_laps():
+    laps = _laps_with_quality_columns(is_accurate=[True, False, True])
+    tagged = tag_telemetry_with_lap(_telemetry(), laps)
+
+    clean = filter_to_clean_laps(tagged, laps)
+
+    assert 2 not in clean["lap_number"].tolist()

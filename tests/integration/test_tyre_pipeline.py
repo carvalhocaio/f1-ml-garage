@@ -18,6 +18,7 @@ from f1_ml_garage.data.session import (
     load_session_telemetry,
 )
 from f1_ml_garage.features.telemetry_summary import (
+    filter_to_clean_laps,
     summarize_lap_telemetry,
     tag_telemetry_with_lap,
 )
@@ -38,7 +39,8 @@ def test_tyre_pipeline_runs_end_to_end_on_real_session():
     telemetry = load_session_telemetry(2024, "Bahrain", "R")
 
     tagged = tag_telemetry_with_lap(telemetry, laps)
-    summary = summarize_lap_telemetry(tagged)
+    clean = filter_to_clean_laps(tagged, laps)
+    summary = summarize_lap_telemetry(clean)
     assert len(summary) > 0
 
     features, target, groups = build_tyre_features(summary)

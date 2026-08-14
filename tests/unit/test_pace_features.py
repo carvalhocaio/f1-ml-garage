@@ -4,7 +4,6 @@ import pytest
 from f1_ml_garage.features.pace import (
     build_pace_features,
     compute_driver_delta_target,
-    select_green_flag_laps,
 )
 
 
@@ -25,20 +24,6 @@ def _laps(**overrides: object) -> pd.DataFrame:
         }
     )
     return base.assign(**overrides)
-
-
-@pytest.mark.unit
-def test_select_green_flag_laps_drops_non_green_status():
-    raw = _laps(track_status=["1", "2", "1", "1"])
-    green = select_green_flag_laps(raw)
-    assert len(green) == 3
-
-
-@pytest.mark.unit
-def test_select_green_flag_laps_drops_inaccurate_laps():
-    raw = _laps(is_accurate=[True, True, False, True])
-    green = select_green_flag_laps(raw)
-    assert len(green) == 3
 
 
 @pytest.mark.unit

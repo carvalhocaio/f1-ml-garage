@@ -13,11 +13,11 @@ import os
 
 import pytest
 
+from f1_ml_garage.data.laps import select_green_flag_laps
 from f1_ml_garage.data.session import enable_cache, load_session_laps
 from f1_ml_garage.features.pace import (
     build_pace_features,
     compute_driver_delta_target,
-    select_green_flag_laps,
 )
 from f1_ml_garage.models.pace import evaluate_pace_model
 

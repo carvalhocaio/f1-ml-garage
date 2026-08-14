@@ -1,7 +1,11 @@
 import pandas as pd
 import pytest
 
-from f1_ml_garage.data.laps import filter_accurate_laps, normalize_laps
+from f1_ml_garage.data.laps import (
+    filter_accurate_laps,
+    normalize_laps,
+    select_green_flag_laps,
+)
 from f1_ml_garage.exceptions import MissingColumnsError
 
 
@@ -103,3 +107,19 @@ def test_filter_accurate_laps_drops_inaccurate_deleted_and_no_time():
 
     assert len(accurate) == 1
     assert accurate.loc[0, "lap_time_s"] == pytest.approx(88.0)
+
+
+@pytest.mark.unit
+def test_select_green_flag_laps_drops_non_green_status():
+    raw = _raw_laps(TrackStatus=["1", "2"])
+    laps = normalize_laps(raw)
+    green = select_green_flag_laps(laps)
+    assert len(green) == 1
+
+
+@pytest.mark.unit
+def test_select_green_flag_laps_drops_inaccurate_laps():
+    raw = _raw_laps(IsAccurate=[True, False])
+    laps = normalize_laps(raw)
+    green = select_green_flag_laps(laps)
+    assert len(green) == 1
