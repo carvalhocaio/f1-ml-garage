@@ -106,3 +106,31 @@ def load_season_results(year: int, rounds: list[int] | None = None) -> pd.DataFr
         )
 
     return pd.concat(frames, ignore_index=True)
+
+
+def load_session_telemetry(
+    year: int, gp: str | int, session_type: str = "R"
+) -> pd.DataFrame:
+    """Carrega e normaliza a telemetria de TODOS os pilotos de uma sessão,
+    concatenada, com a coluna `driver` marcada em cada linha.
+
+    O schema normalizado de `telemetry.py` não inclui `driver` — é
+    informação externa ao dado bruto do FastF1 (vem de qual piloto a
+    telemetria foi pedida, não de uma coluna do payload). Marcamos aqui,
+    no ponto de carregamento, mesmo padrão de `load_season_results`
+    marcando `round_number`/`event_name`.
+
+    Volume de dado bem maior que `load_session_laps`/`load_session_results`
+    — telemetria é amostrada em alta frequência, então isso baixa (e
+    ocupa cache) uma ordem de grandeza a mais de dado que os outros
+    loaders desta sessão.
+    """
+    session = fastf1.get_session(year, gp, session_type)
+    session.load(laps=True, telemetry=True, weather=False, messages=False)
+
+    frames = []
+    for driver in session.laps["Driver"].unique():
+        raw_telemetry = session.laps.pick_drivers(driver).get_telemetry()
+        frames.append(normalize_telemetry(raw_telemetry).assign(driver=driver))
+
+    return pd.concat(frames, ignore_index=True)

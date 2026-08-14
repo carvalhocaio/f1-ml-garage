@@ -66,3 +66,45 @@ def evaluate_classifier(
         "f1": float(np.mean(scores["test_f1"])),
         "dnf_rate": float(target.mean()),
     }
+
+
+_MULTICLASS_SCORING = {
+    "accuracy": "accuracy",
+    "precision_macro": make_scorer(precision_score, average="macro", zero_division=0),
+    "recall_macro": make_scorer(recall_score, average="macro", zero_division=0),
+    "f1_macro": make_scorer(f1_score, average="macro", zero_division=0),
+}
+
+
+def evaluate_multiclass_classifier(
+    pipeline: Pipeline,
+    features: pd.DataFrame,
+    target: pd.Series,
+    groups: pd.Series,
+    n_splits: int = DEFAULT_N_SPLITS,
+) -> dict[str, float]:
+    """Avalia um classificador multiclasse com `StratifiedGroupKFold`.
+
+    Precision/recall/f1 usam `average="macro"` — cada classe pesa igual no
+    resultado final, independente de quantas voltas ela tem. `"weighted"`
+    (a média ponderada pelo tamanho de cada classe) esconderia o mesmo
+    problema que accuracy sozinha esconde em `evaluate_classifier`: se
+    "medium" for raro, `"weighted"` quase ignoraria o desempenho nele;
+    `"macro"` não deixa.
+    """
+    cv = StratifiedGroupKFold(n_splits=n_splits)
+    scores = cross_validate(
+        pipeline,
+        features,
+        target,
+        groups=groups,
+        cv=cv,
+        scoring=_MULTICLASS_SCORING,
+    )
+
+    return {
+        "accuracy": float(np.mean(scores["test_accuracy"])),
+        "precision_macro": float(np.mean(scores["test_precision_macro"])),
+        "recall_macro": float(np.mean(scores["test_recall_macro"])),
+        "f1_macro": float(np.mean(scores["test_f1_macro"])),
+    }
