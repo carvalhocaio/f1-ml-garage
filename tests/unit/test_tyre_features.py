@@ -1,130 +1,31 @@
 import pandas as pd
 import pytest
 
-from f1_ml_garage.features.tyre import (
-    build_tyre_features,
-    summarize_lap_telemetry,
-    tag_telemetry_with_lap,
-)
+from f1_ml_garage.features.tyre import build_tyre_features
 
 
-def _laps() -> pd.DataFrame:
-    """3 voltas de VER, subset mínimo de colunas que `tag_telemetry_with_lap`
-    usa (`session_time_s` marca o FIM de cada volta)."""
+def _lap_summary() -> pd.DataFrame:
+    """Formato de saída de `telemetry_summary.summarize_lap_telemetry`,
+    construído direto (sem passar pelo join) pra testar só
+    `build_tyre_features` isoladamente."""
     return pd.DataFrame(
         {
-            "driver": ["VER", "VER", "VER"],
-            "lap_number": [1, 2, 3],
-            "session_time_s": [100.0, 190.0, 275.0],
-            "compound": ["soft", "soft", "medium"],
+            "driver": ["VER", "VER", "HAM"],
+            "lap_number": [1, 2, 1],
+            "compound": ["soft", "soft", "hard"],
+            "mean_speed_kmh": [290.0, 292.0, 275.0],
+            "max_speed_kmh": [310.0, 312.0, 295.0],
+            "mean_throttle_pct": [85.0, 86.0, 70.0],
+            "brake_fraction": [0.15, 0.14, 0.22],
+            "mean_rpm": [11800.0, 11850.0, 11300.0],
+            "mean_gear": [6.5, 6.6, 5.8],
         }
     )
-
-
-def _telemetry() -> pd.DataFrame:
-    """5 amostras de telemetria de VER, espalhadas pelas 3 voltas acima."""
-    return pd.DataFrame(
-        {
-            "driver": ["VER", "VER", "VER", "VER", "VER"],
-            "session_time_s": [50.0, 95.0, 150.0, 200.0, 270.0],
-            "speed_kmh": [280.0, 300.0, 250.0, 260.0, 265.0],
-            "throttle_pct": [80.0, 100.0, 60.0, 70.0, 75.0],
-            "brake": [False, False, True, False, False],
-            "rpm": [11000.0, 11800.0, 10500.0, 10800.0, 10900.0],
-            "gear": [6, 7, 5, 6, 6],
-        }
-    )
-
-
-@pytest.mark.unit
-def test_tag_telemetry_with_lap_assigns_correct_lap():
-    tagged = tag_telemetry_with_lap(_telemetry(), _laps())
-
-    # amostras em 50s/95s -> volta 1 (termina em 100s)
-    # amostra em 150s -> volta 2 (termina em 190s)
-    # amostras em 200s/270s -> volta 3 (termina em 275s)
-    assert list(tagged["lap_number"]) == [1, 1, 2, 3, 3]
-    assert list(tagged["compound"]) == ["soft", "soft", "soft", "medium", "medium"]
-
-
-@pytest.mark.unit
-def test_tag_telemetry_with_lap_respects_driver_boundaries():
-    """Tempos de sessão se sobrepõem entre pilotos — sem separar por
-    `driver`, a amostra de um poderia grudar na volta de outro."""
-    laps = pd.concat(
-        [
-            _laps(),
-            pd.DataFrame(
-                {
-                    "driver": ["HAM"],
-                    "lap_number": [1],
-                    "session_time_s": [60.0],
-                    "compound": ["hard"],
-                }
-            ),
-        ],
-        ignore_index=True,
-    )
-    telemetry = pd.concat(
-        [
-            _telemetry(),
-            pd.DataFrame(
-                {
-                    "driver": ["HAM"],
-                    "session_time_s": [55.0],
-                    "speed_kmh": [200.0],
-                    "throttle_pct": [50.0],
-                    "brake": [False],
-                    "rpm": [9000.0],
-                    "gear": [4],
-                }
-            ),
-        ],
-        ignore_index=True,
-    )
-
-    tagged = tag_telemetry_with_lap(telemetry, laps)
-
-    ham_row = tagged.loc[tagged["driver"] == "HAM"]
-    assert list(ham_row["compound"]) == ["hard"]
-    # a amostra de VER em 50s continua indo pra volta 1 do VER (soft), não
-    # é afetada pela volta do HAM que termina em 60s.
-    ver_first = tagged.loc[
-        (tagged["driver"] == "VER") & (tagged["session_time_s"] == 50.0)
-    ]
-    assert list(ver_first["compound"]) == ["soft"]
-
-
-@pytest.mark.unit
-def test_summarize_lap_telemetry_aggregates_correctly():
-    tagged = tag_telemetry_with_lap(_telemetry(), _laps())
-    summary = summarize_lap_telemetry(tagged)
-
-    lap1 = summary.loc[
-        (summary["driver"] == "VER") & (summary["lap_number"] == 1)
-    ].iloc[0]
-
-    # volta 1: amostras de 280/300 km/h, throttle 80/100, brake sempre False
-    assert lap1["mean_speed_kmh"] == pytest.approx(290.0)
-    assert lap1["max_speed_kmh"] == pytest.approx(300.0)
-    assert lap1["mean_throttle_pct"] == pytest.approx(90.0)
-    assert lap1["brake_fraction"] == pytest.approx(0.0)
-    assert lap1["compound"] == "soft"
-
-
-@pytest.mark.unit
-def test_summarize_lap_telemetry_one_row_per_driver_lap():
-    tagged = tag_telemetry_with_lap(_telemetry(), _laps())
-    summary = summarize_lap_telemetry(tagged)
-    # 3 voltas de VER na telemetria de teste (a volta 2 não tem amostra
-    # própria nesse fixture pequeno, mas a 1 e a 3 sim)
-    assert len(summary) == summary[["driver", "lap_number"]].drop_duplicates().shape[0]
 
 
 @pytest.mark.unit
 def test_build_tyre_features_returns_aligned_shapes():
-    tagged = tag_telemetry_with_lap(_telemetry(), _laps())
-    summary = summarize_lap_telemetry(tagged)
+    summary = _lap_summary()
     features, target, groups = build_tyre_features(summary)
 
     assert len(features) == len(summary)
@@ -134,8 +35,25 @@ def test_build_tyre_features_returns_aligned_shapes():
 
 @pytest.mark.unit
 def test_build_tyre_features_target_matches_compound():
-    tagged = tag_telemetry_with_lap(_telemetry(), _laps())
-    summary = summarize_lap_telemetry(tagged)
+    summary = _lap_summary()
     _, target, _ = build_tyre_features(summary)
 
     assert list(target) == list(summary["compound"])
+
+
+@pytest.mark.unit
+def test_build_tyre_features_groups_match_driver():
+    summary = _lap_summary()
+    _, _, groups = build_tyre_features(summary)
+
+    assert list(groups) == list(summary["driver"])
+
+
+@pytest.mark.unit
+def test_build_tyre_features_excludes_identifier_columns():
+    """driver/lap_number/compound não são features numéricas do modelo —
+    só identificam a linha ou são o alvo."""
+    summary = _lap_summary()
+    features, _, _ = build_tyre_features(summary)
+
+    assert not {"driver", "lap_number", "compound"} & set(features.columns)

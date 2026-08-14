@@ -17,11 +17,11 @@ from f1_ml_garage.data.session import (
     load_session_laps,
     load_session_telemetry,
 )
-from f1_ml_garage.features.tyre import (
-    build_tyre_features,
+from f1_ml_garage.features.telemetry_summary import (
     summarize_lap_telemetry,
     tag_telemetry_with_lap,
 )
+from f1_ml_garage.features.tyre import build_tyre_features
 from f1_ml_garage.models.evaluation import evaluate_multiclass_classifier
 from f1_ml_garage.models.tyre import build_tyre_svm_pipeline
 
