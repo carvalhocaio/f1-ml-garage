@@ -42,7 +42,7 @@ DNF, agora confirmado de um ângulo totalmente diferente: telemetria, não
 resultado de corrida)
 
 accuracy=0.666 precision_macro=0.642 recall_macro=0.640 f1_macro=0.623
-``` 
+```
 
 Accuracy sozinha é enganosa de novo: com 791 vs 338, só prever "hard"
 sempre já dá ~70% — nosso 66.6% é MENOR que esse baseline ingênuo, porque

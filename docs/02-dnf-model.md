@@ -61,10 +61,10 @@ qualquer hipótese sobre regex.
 Com o alvo corrigido, comparei `class_weight="balanced"` contra sem peso
 nenhum, no mesmo dataset (24 corridas, 2024):
 
-``` 
+```
 unweighted: accuracy=0.879 precision=0.000 recall=0.000 f1=0.000
 balanced: accuracy=0.553 precision=0.175 recall=0.724 f1=0.268
-``` 
+```
 
 `unweighted` nunca prevê DNF nenhuma vez, em nenhum fold — accuracy alta
 (88.7%, quase exatamente `1 - taxa_de_dnf`) escondendo um modelo que não
@@ -88,7 +88,7 @@ Resultado, mesmo dataset, `class_weight="balanced"`:
 ```
 dnf (amplo): recall=0.724 precision=0.175 f1=0.268
 retired (restrito): recall=0.514 precision=0.113 f1=0.184
-``` 
+```
 
 **A hipótese não se confirmou** — todas as métricas de detecção pioraram
 com o alvo mais restrito, não melhoraram. Só 5 linhas foram removidas (3
