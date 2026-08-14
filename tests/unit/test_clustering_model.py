@@ -5,8 +5,11 @@ from sklearn.metrics import adjusted_rand_score
 
 from f1_ml_garage.models.clustering import (
     evaluate_clustering,
+    fit_gmm,
     fit_kmeans,
     fit_pca,
+    gmm_component_probabilities,
+    select_n_components_by_bic,
     standardize_features,
 )
 
@@ -111,3 +114,56 @@ def test_evaluate_clustering_returns_silhouette_in_valid_range():
     assert -1.0 <= result["silhouette_score"] <= 1.0
     # clusters bem separados por construção -> silhouette alto
     assert result["silhouette_score"] > 0.5
+
+
+@pytest.mark.unit
+def test_gmm_recovers_known_clusters():
+    features, truth = _separable_style_dataset()
+    scaled = standardize_features(features)
+    _, coords = fit_pca(scaled, n_components=2)
+    _, labels = fit_gmm(coords, n_components=3)
+
+    assert adjusted_rand_score(truth, labels) > 0.9
+
+
+@pytest.mark.unit
+def test_gmm_component_probabilities_sum_to_one_per_row():
+    features, _ = _separable_style_dataset()
+    scaled = standardize_features(features)
+    _, coords = fit_pca(scaled, n_components=2)
+    model, _ = fit_gmm(coords, n_components=3)
+
+    probabilities = gmm_component_probabilities(model, coords)
+
+    assert probabilities.shape == (len(features), 3)
+    assert probabilities.sum(axis=1) == pytest.approx(np.ones(len(features)), abs=1e-8)
+
+
+@pytest.mark.unit
+def test_gmm_is_confident_when_clusters_are_well_separated():
+    """Com clusters bem separados por construção, o GMM deveria estar
+    "confiante" — a probabilidade do componente mais provável, pra cada
+    ponto, deveria ficar perto de 1 (não ambígua entre componentes)."""
+    features, _ = _separable_style_dataset()
+    scaled = standardize_features(features)
+    _, coords = fit_pca(scaled, n_components=2)
+    model, _ = fit_gmm(coords, n_components=3)
+
+    probabilities = gmm_component_probabilities(model, coords)
+    max_probability_per_point = probabilities.max(axis=1)
+
+    assert max_probability_per_point.mean() > 0.95
+
+
+@pytest.mark.unit
+def test_select_n_components_by_bic_prefers_true_number_of_clusters():
+    features, _ = _separable_style_dataset()
+    scaled = standardize_features(features)
+    _, coords = fit_pca(scaled, n_components=2)
+
+    scores = select_n_components_by_bic(coords, candidates=[1, 2, 3, 4, 5])
+
+    assert set(scores.keys()) == {1, 2, 3, 4, 5}
+    # o dataset tem 3 clusters de verdade por construção -> BIC mínimo
+    # tem que cair em 3, não em qualquer outro candidato
+    assert min(scores, key=scores.get) == 3

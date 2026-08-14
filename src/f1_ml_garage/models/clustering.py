@@ -1,13 +1,15 @@
-"""PCA + k-means pra explorar estilo de pilotagem via telemetria (Módulo 4).
+"""PCA + k-means/GMM pra explorar estilo de pilotagem via telemetria
+(Módulo 4).
 
 Diferente dos modelos supervisionados do Módulo 2, clustering não tem alvo
 pra validar contra — o fluxo de trabalho é outro: escalar, reduzir
-dimensionalidade (PCA), agrupar (k-means), e interpretar os grupos contra
-alguma variável conhecida (aqui, `compound`) como checagem de sanidade, não
-como alvo de treino. Por isso funções separadas e compostas, em vez de um
-único pipeline `fit`/`evaluate` como nos modelos supervisionados — o
-trabalho real de clustering é inspecionar cada etapa (quanta variância o
-PCA explica, qual k faz sentido) antes de seguir pra próxima.
+dimensionalidade (PCA), agrupar (k-means ou GMM), e interpretar os grupos
+contra alguma variável conhecida (aqui, `compound`) como checagem de
+sanidade, não como alvo de treino. Por isso funções separadas e compostas,
+em vez de um único pipeline `fit`/`evaluate` como nos modelos
+supervisionados — o trabalho real de clustering é inspecionar cada etapa
+(quanta variância o PCA explica, qual k faz sentido) antes de seguir pra
+próxima.
 """
 
 import numpy as np
@@ -15,6 +17,7 @@ import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
+from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
 
 DEFAULT_N_COMPONENTS = 2
@@ -67,3 +70,62 @@ def evaluate_clustering(coords: np.ndarray, labels: np.ndarray) -> dict[str, flo
     supervisionados do Módulo 2.
     """
     return {"silhouette_score": float(silhouette_score(coords, labels))}
+
+
+def fit_gmm(
+    coords: np.ndarray, n_components: int = DEFAULT_N_CLUSTERS
+) -> tuple[GaussianMixture, np.ndarray]:
+    """Ajusta um GMM (Gaussian Mixture Model, via EM) sobre as coordenadas
+    e retorna o modelo ajustado junto com o rótulo mais provável de cada
+    linha (`fit_predict`, atribuição rígida — pra atribuição probabilística,
+    ver `gmm_component_probabilities`).
+
+    Diferença real em relação a `fit_kmeans`, não só troca de biblioteca:
+    k-means atribui cada ponto a exatamente um cluster (partição rígida,
+    fronteiras implicitamente esféricas); GMM modela cada componente como
+    uma distribuição gaussiana (com sua própria forma/orientação) e
+    calcula a PROBABILIDADE de cada ponto pertencer a cada uma —
+    atribuição suave. Relevante aqui porque o k-means encontrou dois
+    clusters quase idênticos em composição de composto
+    (`docs/04-driving-style-clustering.md`, iteração 3) — se essa
+    proximidade é real (não uma partição forçada de algo que não deveria
+    ser dividido), o GMM deveria mostrar probabilidades ambíguas (perto de
+    50/50) entre esses dois componentes pra várias voltas.
+    """
+    model = GaussianMixture(
+        n_components=n_components, random_state=DEFAULT_RANDOM_STATE
+    )
+    labels = model.fit_predict(coords)
+    return model, labels
+
+
+def gmm_component_probabilities(
+    model: GaussianMixture, coords: np.ndarray
+) -> np.ndarray:
+    """Probabilidade de cada ponto pertencer a cada componente do GMM —
+    o que de fato distingue GMM de k-means na prática (atribuição suave,
+    não só um rótulo). Uma coluna por componente, uma linha por ponto,
+    linhas somando 1.
+    """
+    return model.predict_proba(coords)
+
+
+def select_n_components_by_bic(
+    coords: np.ndarray, candidates: list[int]
+) -> dict[int, float]:
+    """BIC (Bayesian Information Criterion) para cada número de
+    componentes candidato — o critério padrão pra escolher `k` num GMM,
+    penalizando complexidade (mais componentes = mais parâmetros livres)
+    contra qualidade do ajuste (log-verossimilhança). Menor BIC é melhor.
+
+    Diferente do "método do cotovelo" usado informalmente com k-means
+    (olhar um gráfico e decidir visualmente), BIC dá um número direto e
+    comparável entre diferentes `k` — o candidato com menor BIC é a
+    escolha objetiva, não uma leitura visual.
+    """
+    scores = {}
+    for n in candidates:
+        model = GaussianMixture(n_components=n, random_state=DEFAULT_RANDOM_STATE)
+        model.fit(coords)
+        scores[n] = float(model.bic(coords))
+    return scores
