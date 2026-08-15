@@ -2,7 +2,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from f1_ml_garage.models.dnf import build_dnf_logistic_pipeline, build_dnf_tree_pipeline
+from f1_ml_garage.models.dnf import (
+    build_dnf_boosting_pipeline,
+    build_dnf_logistic_pipeline,
+    build_dnf_random_forest_pipeline,
+    build_dnf_tree_pipeline,
+    compute_scale_pos_weight,
+)
 from f1_ml_garage.models.evaluation import evaluate_classifier
 
 N_DRIVERS = 20
@@ -90,6 +96,52 @@ def test_returns_expected_metric_keys():
     }
 
 
+@pytest.mark.unit
+def test_random_forest_recovers_known_separable_pattern():
+    """Bagging (várias árvores em amostras bootstrap diferentes, voto
+    majoritário) deveria recuperar o padrão quase tão bem quanto uma
+    árvore única — não perfeito, o "quase" vem do próprio bagging
+    suavizando decisões perto da fronteira."""
+    features, target, groups = _separable_dnf_dataset()
+
+    result = evaluate_classifier(
+        build_dnf_random_forest_pipeline(), features, target, groups, n_splits=4
+    )
+
+    assert result["recall"] > 0.85
+    assert result["precision"] > 0.9
+    assert result["f1"] > 0.85
+
+
+@pytest.mark.unit
+def test_boosting_recovers_known_separable_pattern():
+    """Boosting (árvores em sequência, cada uma corrigindo o resíduo da
+    anterior) tem capacidade de representar o padrão quase perfeitamente
+    com estimadores suficientes — diferente da regressão logística
+    (fronteira suave), não tem por que ficar abaixo de 1.0 aqui."""
+    features, target, groups = _separable_dnf_dataset()
+    scale_pos_weight = compute_scale_pos_weight(target)
+
+    result = evaluate_classifier(
+        build_dnf_boosting_pipeline(scale_pos_weight=scale_pos_weight),
+        features,
+        target,
+        groups,
+        n_splits=4,
+    )
+
+    assert result["recall"] > 0.95
+    assert result["precision"] > 0.95
+    assert result["f1"] > 0.95
+
+
+@pytest.mark.unit
+def test_compute_scale_pos_weight_matches_negative_over_positive_ratio():
+    target = pd.Series([True, True, False, False, False, False])
+    # 2 positivos, 4 negativos -> 4/2 = 2.0
+    assert compute_scale_pos_weight(target) == pytest.approx(2.0)
+
+
 def _noisy_imbalanced_dataset() -> tuple[pd.DataFrame, pd.Series, pd.Series]:
     """Dataset sintético com ruído e desbalanceamento real (~11% DNF): grid
     alto AUMENTA a chance de DNF, não garante — diferente do dataset
@@ -144,3 +196,29 @@ def test_class_weight_balanced_improves_recall_on_imbalanced_data():
     assert balanced["recall"] > 0.5
     assert unweighted["recall"] < 0.3
     assert balanced["recall"] > unweighted["recall"]
+
+
+@pytest.mark.unit
+def test_scale_pos_weight_improves_recall_on_imbalanced_data():
+    """Mesma lição do teste acima, agora pro XGBoost — que não tem
+    `class_weight="balanced"`, usa `scale_pos_weight` no lugar
+    (`compute_scale_pos_weight`)."""
+    features, target, groups = _noisy_imbalanced_dataset()
+    scale_pos_weight = compute_scale_pos_weight(target)
+
+    weighted = evaluate_classifier(
+        build_dnf_boosting_pipeline(scale_pos_weight=scale_pos_weight),
+        features,
+        target,
+        groups,
+        n_splits=5,
+    )
+    unweighted = evaluate_classifier(
+        build_dnf_boosting_pipeline(scale_pos_weight=1.0),
+        features,
+        target,
+        groups,
+        n_splits=5,
+    )
+
+    assert weighted["recall"] > unweighted["recall"]
