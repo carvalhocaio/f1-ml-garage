@@ -134,6 +134,11 @@ pro caso de uso, não é uma resposta absoluta.
 
 ## Próximos passos possíveis
 
+- **Ajustar o limiar de decisão** (não só reponderar treino) — a
+  descoberta da seção de ensembles: usar a curva precision-recall pra
+  escolher um limiar diferente de 0.5, otimizando F1 (ou priorizando
+  recall) diretamente, em vez de confiar só em `class_weight`/
+  `scale_pos_weight` no treino.
 - Combinar múltiplas temporadas (2022-2024) — mais amostra, poder
   estatístico real pra revisitar o experimento do alvo restrito.
 - Features adicionais conhecidas antes da largada: histórico de
@@ -141,8 +146,11 @@ pro caso de uso, não é uma resposta absoluta.
   temporada, cuidado pra não vazar o futuro), característica do circuito
   (rua vs permanente — Mônaco/Baku têm taxa de incidente bem diferente de
   Silverstone/Barcelona).
-- Ajustar hiperparâmetros (`max_depth`, `C`) em vez de usar os padrões —
-  a comparação acima ainda não é definitiva nesse sentido.
+- Ajustar hiperparâmetros (`max_depth`, `C`, `n_estimators`) em vez de
+  usar os padrões — nenhuma comparação até aqui é definitiva nesse
+  sentido.
+- Stacking — combinar os 4 modelos com um meta-modelo, a peça que falta
+  do tópico de ensembles do currículo.
 
 O resto do Módulo 2 (SVM+kernels, classificar composto via telemetria)
 está completo — ver `docs/03-tyre-model.md`.
