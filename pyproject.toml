@@ -8,6 +8,7 @@ dependencies = [
     "fastf1>=3.8.3",
     "pandas>=2.3.3",
     "scikit-learn>=1.9.0",
+    "xgboost-cpu>=3.4.0",
 ]
 
 [dependency-groups]
