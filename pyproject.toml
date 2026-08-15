@@ -34,3 +34,6 @@ addopts = "-q --strict-markers"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/f1_ml_garage"]
+
+[tool.pyright]
+reportMissingTypeStubs = false
