@@ -22,6 +22,7 @@ src/f1_ml_garage/
 │   ├── laps.py              # normalização de voltas + filtros de qualidade
 │   ├── results.py           # normalização de classificação final (inclui dnf)
 │   ├── telemetry.py         # normalização de telemetria por amostra
+│   ├── circuits.py          # curadoria manual: circuito de rua vs. permanente
 │   └── session.py           # carregamento via FastF1, com cache
 ├── features/                # feature engineering, sem tocar rede
 │   ├── pace.py               # features do modelo de ritmo (Módulo 2)
@@ -30,10 +31,11 @@ src/f1_ml_garage/
 │   ├── tyre.py                  # features do SVM de composto (Módulo 2)
 │   └── driving_style.py          # features de clustering de estilo (Módulo 4)
 └── models/                  # pipelines e avaliação
-    ├── pace.py               # regressão linear de tempo de volta
+    ├── pace.py               # regressão linear de ritmo (+ variantes Ridge/Lasso)
     ├── dnf.py                 # árvore, logística, Random Forest, XGBoost,
     │                          # stacking — 5 modelos pro mesmo problema
     ├── evaluation.py          # avaliação de classificadores, compartilhada
+    │                          # (CV, threshold, ROC AUC, calibração)
     ├── tyre.py                 # SVM de composto
     └── clustering.py            # PCA + k-means + GMM/EM
 ```
@@ -80,7 +82,8 @@ make check          # lint + format-check
   de abandono (árvore, logística, Random Forest, XGBoost, stacking) — bug
   real de dados no alvo `dnf` corrigido, dados desbalanceados e ajuste de
   limiar de decisão em números reais, bias-variance via capacidade de
-  ensemble, feature engineering testada e não confirmada
+  ensemble, features de confiabilidade da equipe e tipo de circuito
+  testadas e não confirmadas
 - [`03-tyre-model.md`](docs/03-tyre-model.md) — Módulo 2: SVM classificando
   composto de pneu via telemetria
 - [`04-driving-style-clustering.md`](docs/04-driving-style-clustering.md) —
