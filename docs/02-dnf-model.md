@@ -132,23 +132,85 @@ falso); a logística fica num ponto mais equilibrado do trade-off
 precision/recall. Qual é "melhor" depende do custo relativo de cada erro
 pro caso de uso, não é uma resposta absoluta.
 
+## Ensembles: Random Forest e XGBoost — mais sofisticado não é melhor aqui
+
+Adicionados `build_dnf_random_forest_pipeline` (bagging) e
+`build_dnf_boosting_pipeline` (boosting via XGBoost — pacote
+`xgboost-cpu`, não `xgboost` puro, que puxa ~300MB de dependência CUDA
+irrelevante pra esse projeto). XGBoost usa `scale_pos_weight` pra classe
+rara, não `class_weight` — não recalcula sozinho a partir do `y` de
+treino como o sklearn faz, precisa ser calculado explicitamente
+(`compute_scale_pos_weight`, proporção negativos/positivos).
+
+Resultado real (temporada 2024, mesmas 2 features de sempre, limiar
+padrão de 0.5):
+
+```
+árvore: accuracy=0.553 precision=0.175 recall=0.724 f1=0.268
+logística: accuracy=0.650 precision=0.189 recall=0.574 f1=0.273
+random forest: accuracy=0.711 precision=0.179 recall=0.422 f1=0.243
+xgboost: accuracy=0.799 precision=0.246 recall=0.236 f1=0.206
+```
+
+Direção **oposta** à intuição de "modelo mais sofisticado, resultado
+melhor": accuracy e precision sobem de árvore pra XGBoost, mas recall
+despenca e F1 piora — XGBoost tem o PIOR F1 dos quatro, apesar da melhor
+accuracy.
+
+**Leitura inicial:** ensembles otimizam pra minimizar erro médio de
+treino. Com só 2 features — pouca estrutura complexa pra explorar — e uma
+classe rara, o jeito mais barato de reduzir erro médio é inclinar pra
+classe majoritária. `scale_pos_weight`/`class_weight="balanced"`
+reponderam o TREINO, mas a decisão final ainda usa o limiar padrão de 0.5
+pra converter probabilidade em classe.
+
+### Ajustando o limiar: a hipótese só se confirma em parte
+
+Implementado `find_best_threshold` + `evaluate_classifier_with_tuned_threshold`
+(`models/evaluation.py`) — escolhe o limiar que maximiza F1 via curva
+precision-recall, usando probabilidades fora-da-dobra (`cross_val_predict`),
+em vez do corte fixo de 0.5.
+
+Resultado real, mesmos 4 modelos, limiar ajustado:
+
+```
+               limiar    F1 (0.5)   F1 (ajustado)
+árvore:        0.379     0.268      0.276
+logística:     0.496     0.273      0.290
+random forest: 0.472     0.243      0.264
+xgboost:       0.008     0.206      0.226
+```
+
+Ajustar o limiar melhorou os 4 modelos — mas **não mudou o ranking**.
+XGBoost continua sendo o pior em F1, mesmo com o limiar otimizado (que
+precisou cair pra 0.008 — "responde positivo pra quase tudo", accuracy
+despenca pra 0.355 nesse ponto). A logística passa a ser a melhor das
+quatro.
+
+**Leitura final, mais honesta que a inicial:** o problema não era só o
+limiar fixo em 0.5 — ajustar ajudou todo mundo igual, sem mudar a ordem.
+Explicação mais provável: com só ~9 features (`grid_position` + ~8
+dummies de `team`) e ~479 linhas, 200 árvores de boosting é capacidade
+demais pra pouco dado/sinal real — o próprio XGBoost provavelmente tem
+mais variância (overfit no CV) que a árvore única ou a logística. Mesmo
+tema de bias-variance do currículo, de outro ângulo: modelo mais
+sofisticado nem sempre vence quando o dado é pequeno e o sinal é
+limitado — às vezes o modelo simples generaliza melhor por ter menos o
+que decorar.
+
 ## Próximos passos possíveis
 
-- **Ajustar o limiar de decisão** (não só reponderar treino) — a
-  descoberta da seção de ensembles: usar a curva precision-recall pra
-  escolher um limiar diferente de 0.5, otimizando F1 (ou priorizando
-  recall) diretamente, em vez de confiar só em `class_weight`/
-  `scale_pos_weight` no treino.
 - Combinar múltiplas temporadas (2022-2024) — mais amostra, poder
-  estatístico real pra revisitar o experimento do alvo restrito.
+  estatístico real pra revisitar o experimento do alvo restrito, e talvez
+  dar ao XGBoost dado suficiente pra justificar sua capacidade extra.
 - Features adicionais conhecidas antes da largada: histórico de
   confiabilidade da equipe (taxa de DNF em corridas anteriores DAQUELA
   temporada, cuidado pra não vazar o futuro), característica do circuito
   (rua vs permanente — Mônaco/Baku têm taxa de incidente bem diferente de
   Silverstone/Barcelona).
-- Ajustar hiperparâmetros (`max_depth`, `C`, `n_estimators`) em vez de
-  usar os padrões — nenhuma comparação até aqui é definitiva nesse
-  sentido.
+- Ajustar hiperparâmetros (`max_depth`, `C`, `n_estimators`) — reduzir a
+  capacidade do XGBoost (menos estimadores, árvores mais rasas) pra
+  testar diretamente a hipótese de overfit por capacidade excessiva.
 - Stacking — combinar os 4 modelos com um meta-modelo, a peça que falta
   do tópico de ensembles do currículo.
 
