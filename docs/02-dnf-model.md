@@ -198,21 +198,51 @@ sofisticado nem sempre vence quando o dado é pequeno e o sinal é
 limitado — às vezes o modelo simples generaliza melhor por ter menos o
 que decorar.
 
+### Confirmando a hipótese: reduzindo a capacidade do XGBoost
+
+Testado diretamente: varrer `n_estimators`/`max_depth` do XGBoost de
+200/4 (original) até configurações bem mais enxutas, com limiar ajustado
+em cada uma:
+
+```
+n_estimators=200 max_depth=4: f1=0.226 recall=0.833 threshold=0.008
+n_estimators=100 max_depth=3: f1=0.249 recall=0.796 threshold=0.069
+n_estimators= 50 max_depth=3: f1=0.249 recall=0.815 threshold=0.108
+n_estimators= 50 max_depth=2: f1=0.254 recall=0.833 threshold=0.239
+n_estimators= 20 max_depth=2: f1=0.275 recall=0.667 threshold=0.439
+```
+
+Confirmado, de forma quase monotônica: reduzir capacidade (menos árvores,
+mais rasas) melhora F1 (0.226 → 0.275) e traz o limiar ótimo de volta pra
+uma faixa "sã" (de 0.008 — quase absurdo — pra 0.439, perto do 0.5
+normal). Com `n_estimators=20, max_depth=2`, o XGBoost praticamente
+empata com a árvore (0.275 vs 0.276). A hipótese de capacidade excessiva
+não era só uma explicação plausível — era a causa real, e o teste direto
+confirma.
+
+**Lição consolidada:** hiperparâmetros de regularização/capacidade
+(`n_estimators`, `max_depth`) importam tanto quanto a escolha do
+algoritmo em si — um XGBoost mal calibrado pra capacidade do dataset
+perde até pra uma árvore única; um XGBoost enxuto o suficiente empata.
+"Ensemble" não é sinônimo de "melhor", é uma ferramenta com seu próprio
+trade-off de bias-variance pra ajustar.
+
 ## Próximos passos possíveis
 
 - Combinar múltiplas temporadas (2022-2024) — mais amostra, poder
   estatístico real pra revisitar o experimento do alvo restrito, e talvez
-  dar ao XGBoost dado suficiente pra justificar sua capacidade extra.
+  dar ao XGBoost dado suficiente pra justificar mais capacidade.
 - Features adicionais conhecidas antes da largada: histórico de
   confiabilidade da equipe (taxa de DNF em corridas anteriores DAQUELA
   temporada, cuidado pra não vazar o futuro), característica do circuito
   (rua vs permanente — Mônaco/Baku têm taxa de incidente bem diferente de
   Silverstone/Barcelona).
-- Ajustar hiperparâmetros (`max_depth`, `C`, `n_estimators`) — reduzir a
-  capacidade do XGBoost (menos estimadores, árvores mais rasas) pra
-  testar diretamente a hipótese de overfit por capacidade excessiva.
-- Stacking — combinar os 4 modelos com um meta-modelo, a peça que falta
-  do tópico de ensembles do currículo.
+- Busca sistemática de hiperparâmetros (grid/random search com CV, em vez
+  de varrer uma lista curta na mão) — formalizaria o que a seção de
+  capacidade fez informalmente.
+- Stacking — combinar os 4 modelos (nas configurações enxutas, não as
+  originais) com um meta-modelo, a peça que falta do tópico de ensembles
+  do currículo.
 
 O resto do Módulo 2 (SVM+kernels, classificar composto via telemetria)
 está completo — ver `docs/03-tyre-model.md`.
