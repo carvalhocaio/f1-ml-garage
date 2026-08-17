@@ -43,8 +43,65 @@ def build_retirement_target(results: pd.DataFrame) -> pd.Series:
     return results["status"] == "Retired"
 
 
+def compute_team_reliability_feature(results: pd.DataFrame) -> pd.Series:
+    """Taxa de DNF da equipe nas corridas ANTERIORES da mesma temporada —
+    janela expansível, nunca olha a rodada atual nem o futuro.
+
+    Requer `round_number` (marcado por `load_season_results`) e `dnf`.
+    Agrega a taxa de DNF por (`team`, `round_number`) PRIMEIRO — cada
+    equipe tem 2 pilotos correndo na mesma rodada, ao mesmo tempo; se o
+    `shift(1)/expanding()` rodasse direto linha a linha (uma linha por
+    piloto), o resultado de um piloto vazaria pro "histórico" do
+    companheiro de equipe da MESMA rodada, que corre simultaneamente, não
+    antes. Agregar a rodada inteira num só número antes de aplicar a
+    janela evita esse vazamento.
+
+    Primeira rodada de cada equipe na temporada vira `NaN` (sem histórico
+    anterior) — decisão de preenchimento fica pra quem chama
+    (`fill_missing_team_reliability`), não desta função: mistura filtro
+    com imputação seria a mesma bagunça de responsabilidades que
+    `select_green_flag_laps`/`build_pace_features` evitam em
+    `features/pace.py`.
+    """
+    team_round_dnf_rate = (
+        results.groupby(["team", "round_number"])["dnf"].mean().reset_index()
+    )
+    team_round_dnf_rate = team_round_dnf_rate.sort_values(["team", "round_number"])
+    team_round_dnf_rate["team_reliability"] = team_round_dnf_rate.groupby("team")[
+        "dnf"
+    ].transform(lambda group: group.shift(1).expanding().mean())
+
+    merged = (
+        results.reset_index()
+        .merge(
+            team_round_dnf_rate[["team", "round_number", "team_reliability"]],
+            on=["team", "round_number"],
+            how="left",
+        )
+        .set_index("index")
+    )
+    return merged["team_reliability"].reindex(results.index)
+
+
+def fill_missing_team_reliability(reliability: pd.Series) -> pd.Series:
+    """Preenche times sem histórico ainda (primeira rodada da temporada)
+    com a média geral de confiabilidade entre equipes que JÁ têm histórico
+    — um prior razoável pra "não sei nada sobre essa equipe ainda".
+
+    Calculado a partir do dataset completo (mesma simplificação já
+    documentada em `compute_scale_pos_weight` e
+    `evaluate_classifier_with_tuned_threshold`): não é uma estatística por
+    exemplo individual, é agregada — vazamento pequeno e consistente com
+    o resto do módulo, não escondido.
+    """
+    return reliability.fillna(reliability.mean())
+
+
 def build_dnf_features(
-    results: pd.DataFrame, target_column: str = "dnf"
+    results: pd.DataFrame,
+    target_column: str = "dnf",
+    *,
+    include_team_reliability: bool = False,
 ) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
     """Monta a matriz de features (X), o alvo (y) e os grupos (piloto).
 
@@ -63,13 +120,28 @@ def build_dnf_features(
     `target_column`: "dnf" (padrão, definição ampla) ou uma coluna que o
     chamador já adicionou a `results` — ex. `build_retirement_target` — pra
     testar um alvo mais restrito sem duplicar a lógica de X/groups.
+
+    `include_team_reliability=True` adiciona `team_reliability`
+    (`compute_team_reliability_feature` + `fill_missing_team_reliability`)
+    como terceira feature — opt-in, não padrão, pra manter a comparação
+    "com" vs "sem" limpa (mesmo espírito de `relative_to_driver` em
+    `features/driving_style.py`). Requer `results` vindo de
+    `load_season_results` (precisa de `round_number`).
     """
     team_dummies = pd.get_dummies(results["team"], prefix="team")
 
-    features = pd.concat(
-        [results[["grid_position"]].reset_index(drop=True), team_dummies],
-        axis=1,
-    )
+    feature_frames = [
+        results[["grid_position"]].reset_index(drop=True),
+        team_dummies,
+    ]
+    if include_team_reliability:
+        reliability = compute_team_reliability_feature(results)
+        reliability = fill_missing_team_reliability(reliability)
+        feature_frames.append(
+            reliability.rename("team_reliability").reset_index(drop=True)
+        )
+
+    features = pd.concat(feature_frames, axis=1)
     target = results[target_column].reset_index(drop=True)
     groups = results["driver"].reset_index(drop=True)
 
