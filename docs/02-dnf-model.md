@@ -227,22 +227,55 @@ perde até pra uma árvore única; um XGBoost enxuto o suficiente empata.
 "Ensemble" não é sinônimo de "melhor", é uma ferramenta com seu próprio
 trade-off de bias-variance pra ajustar.
 
+## Stacking — fecha o tópico de ensembles do currículo
+
+`build_dnf_stacking_pipeline` combina os 4 modelos (árvore, logística,
+Random Forest, XGBoost na configuração enxuta 20/2 encontrada na seção
+anterior) via um meta-modelo (regressão logística) que aprende a pesar
+cada um. Diferente de bagging/boosting, que combinam instâncias do MESMO
+algoritmo, stacking combina modelos de natureza diferente — pode ganhar
+se cada um erra em lugares diferentes.
+
+Limitação registrada no código: o `cv` interno do `StackingClassifier`
+(usado pra gerar as previsões dos modelos base que alimentam o
+meta-modelo) não aceita `groups` sem ativar metadata routing, não
+suportado por esse estimador nesta versão do sklearn. Limitação LOCAL,
+dentro do treino — a avaliação real continua com `StratifiedGroupKFold`
+própria por fora, sem vazar piloto entre treino e teste no nível que
+importa.
+
+Resultado real, 5 modelos, limiar ajustado em todos:
+
+```
+árvore: f1=0.276 threshold=0.379
+logística: f1=0.290 threshold=0.496
+random forest: f1=0.264 threshold=0.472
+xgboost (leve): f1=0.275 threshold=0.439
+stacking: f1=0.283 threshold=0.109
+```
+
+Stacking fica em segundo lugar — supera árvore, Random Forest e XGBoost
+sozinho, mas não a logística. Mesma lição de toda essa investigação, numa
+última confirmação: com só 2 features e ~479 linhas, existe um teto real
+de quanto qualquer técnica extrai desse dataset. O modelo mais simples
+(logística) segue no topo; combinar os outros quatro recupera parte da
+distância, sem superá-lo.
+
 ## Próximos passos possíveis
 
 - Combinar múltiplas temporadas (2022-2024) — mais amostra, poder
   estatístico real pra revisitar o experimento do alvo restrito, e talvez
-  dar ao XGBoost dado suficiente pra justificar mais capacidade.
+  dar mais capacidade (XGBoost, RF) espaço real pra valer a pena.
 - Features adicionais conhecidas antes da largada: histórico de
   confiabilidade da equipe (taxa de DNF em corridas anteriores DAQUELA
   temporada, cuidado pra não vazar o futuro), característica do circuito
   (rua vs permanente — Mônaco/Baku têm taxa de incidente bem diferente de
-  Silverstone/Barcelona).
+  Silverstone/Barcelona). Provavelmente o maior alavancador real — o teto
+  observado nesta investigação parece mais limitado por FEATURES do que
+  por escolha de modelo.
 - Busca sistemática de hiperparâmetros (grid/random search com CV, em vez
-  de varrer uma lista curta na mão) — formalizaria o que a seção de
-  capacidade fez informalmente.
-- Stacking — combinar os 4 modelos (nas configurações enxutas, não as
-  originais) com um meta-modelo, a peça que falta do tópico de ensembles
-  do currículo.
+  de varrer uma lista curta na mão).
 
 O resto do Módulo 2 (SVM+kernels, classificar composto via telemetria)
-está completo — ver `docs/03-tyre-model.md`.
+está completo — ver `docs/03-tyre-model.md`. Ensembles (bagging, boosting,
+stacking) também completo.
