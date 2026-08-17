@@ -3,6 +3,9 @@ import pandas as pd
 import pytest
 
 from f1_ml_garage.models.pace import (
+    build_pace_lasso_pipeline,
+    build_pace_pipeline,
+    build_pace_ridge_pipeline,
     evaluate_pace_model,
     fit_pace_model,
     pace_coefficients,
@@ -23,6 +26,12 @@ def _synthetic_pace_dataset() -> tuple[pd.DataFrame, pd.Series, pd.Series]:
     perfeitamente (R² ≈ 1, MAE ≈ 0) — o mesmo espírito das validações
     contra oráculo do `cotton-math-lab`, adaptado pra "relação conhecida
     por construção" em vez de "biblioteca de referência".
+
+    Inclui `lap_number` no schema de X (igual a `tyre_life` neste dataset
+    simples, sem stints/paradas) só pra bater com o formato real de
+    `build_pace_features` — Ridge/Lasso escalam todas as features
+    (`_build_regularized_pipeline`, `models/pace.py`) e esperam essa
+    coluna sempre presente.
     """
     compounds = ["soft", "medium", "hard"]
     rows = []
@@ -42,6 +51,7 @@ def _synthetic_pace_dataset() -> tuple[pd.DataFrame, pd.Series, pd.Series]:
                     "lap_time_s": lap_time,
                     "compound": compound,
                     "tyre_life": tyre_life,
+                    "lap_number": tyre_life,
                 }
             )
 
@@ -50,7 +60,7 @@ def _synthetic_pace_dataset() -> tuple[pd.DataFrame, pd.Series, pd.Series]:
     compound_dummies = pd.get_dummies(
         pd.Categorical(laps["compound"], categories=compounds), prefix="compound"
     )
-    features = pd.concat([laps[["tyre_life"]], compound_dummies], axis=1)
+    features = pd.concat([laps[["tyre_life", "lap_number"]], compound_dummies], axis=1)
     target = laps["lap_time_s"]
     groups = laps["driver"]
     return features, target, groups
@@ -60,7 +70,9 @@ def _synthetic_pace_dataset() -> tuple[pd.DataFrame, pd.Series, pd.Series]:
 def test_recovers_known_linear_relationship_without_noise():
     features, target, groups = _synthetic_pace_dataset()
 
-    result = evaluate_pace_model(features, target, groups, n_splits=3)
+    result = evaluate_pace_model(
+        build_pace_pipeline(), features, target, groups, n_splits=3
+    )
 
     assert result["r2"] == pytest.approx(1.0, abs=1e-6)
     assert result["mae_s"] == pytest.approx(0.0, abs=1e-6)
@@ -69,7 +81,9 @@ def test_recovers_known_linear_relationship_without_noise():
 @pytest.mark.unit
 def test_returns_expected_metric_keys():
     features, target, groups = _synthetic_pace_dataset()
-    result = evaluate_pace_model(features, target, groups, n_splits=3)
+    result = evaluate_pace_model(
+        build_pace_pipeline(), features, target, groups, n_splits=3
+    )
 
     assert set(result.keys()) == {"mae_s", "mae_s_std", "r2", "r2_std"}
     assert all(isinstance(v, float) for v in result.values())
@@ -82,7 +96,9 @@ def test_raises_when_more_splits_than_groups():
     features, target, groups = _synthetic_pace_dataset()
 
     with pytest.raises(ValueError):
-        evaluate_pace_model(features, target, groups, n_splits=N_DRIVERS + 1)
+        evaluate_pace_model(
+            build_pace_pipeline(), features, target, groups, n_splits=N_DRIVERS + 1
+        )
 
 
 @pytest.mark.unit
@@ -93,11 +109,87 @@ def test_worse_model_on_shuffled_target_has_lower_r2():
     features, target, groups = _synthetic_pace_dataset()
     shuffled_target = target.sample(frac=1, random_state=42).reset_index(drop=True)
 
-    real = evaluate_pace_model(features, target, groups, n_splits=3)
-    shuffled = evaluate_pace_model(features, shuffled_target, groups, n_splits=3)
+    real = evaluate_pace_model(
+        build_pace_pipeline(), features, target, groups, n_splits=3
+    )
+    shuffled = evaluate_pace_model(
+        build_pace_pipeline(), features, shuffled_target, groups, n_splits=3
+    )
 
     assert real["r2"] > shuffled["r2"]
     assert not np.isclose(shuffled["r2"], 1.0, atol=1e-3)
+
+
+@pytest.mark.unit
+def test_ridge_recovers_known_linear_relationship_without_noise():
+    """Sem ruído no dataset, Ridge com alpha padrão (1.0) ainda deveria
+    recuperar a relação quase perfeitamente — regularização suaviza
+    ruído, não elimina sinal real forte o suficiente."""
+    features, target, groups = _synthetic_pace_dataset()
+
+    result = evaluate_pace_model(
+        build_pace_ridge_pipeline(), features, target, groups, n_splits=3
+    )
+
+    assert result["r2"] > 0.99
+
+
+@pytest.mark.unit
+def test_lasso_recovers_known_linear_relationship_without_noise():
+    """Lasso precisa de um alpha bem menor que o padrão pra recuperar essa
+    relação — os efeitos verdadeiros aqui são pequenos (0.03s/volta de
+    degradação, 0.5s de diferença de composto) e a penalização L1 zera
+    coeficientes desse tamanho com alpha=1.0 (confirmado: R²=0.0, previsão
+    vira só a média). Alpha menor = menos regularização = mais fiel ao
+    dado quando o dado (aqui, sintético e sem ruído) merece confiança."""
+    features, target, groups = _synthetic_pace_dataset()
+
+    result = evaluate_pace_model(
+        build_pace_lasso_pipeline(alpha=0.001), features, target, groups, n_splits=3
+    )
+
+    assert result["r2"] > 0.99
+
+
+@pytest.mark.unit
+def test_higher_alpha_shrinks_ridge_coefficients_toward_zero():
+    """Propriedade central de Ridge: mais regularização (alpha maior) ->
+    coeficientes menores em magnitude, não o oposto. Compara só os
+    coeficientes de feature, não o intercepto — Ridge/Lasso não
+    regularizam intercepto por design (sklearn), então ele não encolhe
+    sistematicamente com alpha, e incluí-lo aqui só adicionaria ruído
+    irrelevante à comparação."""
+    features, target = _known_effects_dataset()
+
+    low_alpha = fit_pace_model(build_pace_ridge_pipeline(alpha=0.01), features, target)
+    high_alpha = fit_pace_model(
+        build_pace_ridge_pipeline(alpha=100.0), features, target
+    )
+
+    low_alpha_coefs = pace_coefficients(low_alpha, features.columns).drop(
+        "intercept", errors="ignore"
+    )
+    high_alpha_coefs = pace_coefficients(high_alpha, features.columns).drop(
+        "intercept", errors="ignore"
+    )
+
+    assert high_alpha_coefs.abs().sum() < low_alpha_coefs.abs().sum()
+
+
+@pytest.mark.unit
+def test_high_alpha_lasso_can_zero_out_coefficients():
+    """Propriedade central de Lasso (diferente de Ridge): regularização
+    forte o suficiente zera coeficientes de FEATURE por completo, não só
+    encolhe. Checagem exclui o intercepto (não é regularizado, não é o
+    que esta propriedade descreve)."""
+    features, target = _known_effects_dataset()
+
+    pipeline = fit_pace_model(build_pace_lasso_pipeline(alpha=50.0), features, target)
+    coefficients = pace_coefficients(pipeline, features.columns).drop(
+        "intercept", errors="ignore"
+    )
+
+    assert (coefficients == 0.0).any()
 
 
 LAP_NUMBER_COEF_S = 0.02
@@ -154,7 +246,7 @@ def _known_effects_dataset(
 def test_pace_coefficients_recovers_known_effects():
     features, target = _known_effects_dataset()
 
-    pipeline = fit_pace_model(features, target)
+    pipeline = fit_pace_model(build_pace_pipeline(), features, target)
     coefficients = pace_coefficients(pipeline, features.columns)
 
     assert coefficients["lap_number"] == pytest.approx(LAP_NUMBER_COEF_S, abs=1e-9)
@@ -176,7 +268,7 @@ def test_pace_coefficients_stable_when_a_compound_is_absent():
     esperado, não uma falha."""
     features, target = _known_effects_dataset(include_medium=False)
 
-    pipeline = fit_pace_model(features, target)
+    pipeline = fit_pace_model(build_pace_pipeline(), features, target)
     coefficients = pace_coefficients(pipeline, features.columns)
 
     assert coefficients["lap_number"] == pytest.approx(LAP_NUMBER_COEF_S, abs=1e-9)

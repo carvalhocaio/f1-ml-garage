@@ -11,13 +11,16 @@ scoring, mas compartilham a mesma lógica de `StratifiedGroupKFold`.
 
 import numpy as np
 import pandas as pd
+from sklearn.calibration import calibration_curve
 from sklearn.metrics import (
     accuracy_score,
+    brier_score_loss,
     f1_score,
     make_scorer,
     precision_recall_curve,
     precision_score,
     recall_score,
+    roc_auc_score,
 )
 from sklearn.model_selection import (
     StratifiedGroupKFold,
@@ -82,6 +85,34 @@ def evaluate_classifier(
     }
 
 
+def compute_out_of_fold_probabilities(
+    pipeline: Pipeline,
+    features: pd.DataFrame,
+    target: pd.Series,
+    groups: pd.Series,
+    n_splits: int = DEFAULT_N_SPLITS,
+) -> np.ndarray:
+    """Probabilidade da classe positiva, fora-da-dobra, via
+    `cross_val_predict` — a probabilidade prevista de cada linha quando
+    ela estava no fold de TESTE, nunca uma previsão vazada do próprio
+    treino.
+
+    Extraído como função própria porque várias métricas que não dependem
+    de limiar (`find_best_threshold`, ROC-AUC, calibração) precisam
+    exatamente da mesma coisa — evita rodar a validação cruzada de novo
+    pra cada métrica.
+    """
+    cv = StratifiedGroupKFold(n_splits=n_splits)
+    return cross_val_predict(
+        pipeline,
+        features,
+        target,
+        groups=groups,
+        cv=cv,
+        method="predict_proba",
+    )[:, 1]
+
+
 def find_best_threshold(probabilities: np.ndarray, target: pd.Series) -> float:
     """Escolhe o limiar de decisão (probabilidade -> classe) que maximiza
     F1, varrendo a curva precision-recall.
@@ -115,29 +146,19 @@ def evaluate_classifier_with_tuned_threshold(
     """Mesma avaliação de `evaluate_classifier`, mas escolhendo o limiar
     de decisão que maximiza F1 em vez de usar o padrão (0.5).
 
-    Usa `cross_val_predict` (não `cross_validate`) pra pegar a
-    probabilidade prevista de cada linha quando ela estava no fold de
-    TESTE — nunca a probabilidade de uma previsão vazada do próprio
-    treino.
-
-    Limitação honesta, não escondida: o limiar é escolhido usando essas
+    Limitação honesta, não escondida: o limiar é escolhido usando as
     MESMAS probabilidades fora-da-dobra que depois viram a métrica
-    reportada — um viés otimista pequeno (o limiar "conhece" um pouco do
-    resultado que está sendo medido, já que os dois vêm da mesma rodada
-    de CV). Não é uma validação totalmente independente (isso exigiria
-    escolher o limiar dentro de cada fold de treino, um CV aninhado). Mas
-    é o padrão comum na prática pra esse tipo de ajuste, e bem mais
-    honesto que usar 0.5 sem questionar.
+    reportada (`compute_out_of_fold_probabilities`) — um viés otimista
+    pequeno (o limiar "conhece" um pouco do resultado que está sendo
+    medido, já que os dois vêm da mesma rodada de CV). Não é uma
+    validação totalmente independente (isso exigiria escolher o limiar
+    dentro de cada fold de treino, um CV aninhado). Mas é o padrão comum
+    na prática pra esse tipo de ajuste, e bem mais honesto que usar 0.5
+    sem questionar.
     """
-    cv = StratifiedGroupKFold(n_splits=n_splits)
-    probabilities = cross_val_predict(
-        pipeline,
-        features,
-        target,
-        groups=groups,
-        cv=cv,
-        method="predict_proba",
-    )[:, 1]
+    probabilities = compute_out_of_fold_probabilities(
+        pipeline, features, target, groups, n_splits
+    )
 
     threshold = find_best_threshold(probabilities, target)
     predictions = probabilities >= threshold
@@ -149,6 +170,70 @@ def evaluate_classifier_with_tuned_threshold(
         "recall": float(recall_score(target, predictions, zero_division=0)),
         "f1": float(f1_score(target, predictions, zero_division=0)),
         "dnf_rate": float(target.mean()),
+    }
+
+
+def compute_roc_auc(
+    pipeline: Pipeline,
+    features: pd.DataFrame,
+    target: pd.Series,
+    groups: pd.Series,
+    n_splits: int = DEFAULT_N_SPLITS,
+) -> float:
+    """ROC-AUC via probabilidades fora-da-dobra.
+
+    Diferente de accuracy/precision/recall/F1 (todas dependem de ESCOLHER
+    um limiar), ROC-AUC não depende de limiar nenhum — mede a capacidade
+    do modelo de RANQUEAR exemplos positivos acima de negativos, em
+    qualquer corte possível. 0.5 = não faz melhor que sorteio; 1.0 =
+    separação perfeita. É a pergunta "o modelo aprendeu alguma coisa
+    útil sobre a ordem?", complementar a "qual o melhor jeito de
+    transformar isso numa decisão binária?" (`find_best_threshold`).
+    """
+    probabilities = compute_out_of_fold_probabilities(
+        pipeline, features, target, groups, n_splits
+    )
+    return float(roc_auc_score(target, probabilities))
+
+
+def compute_calibration(
+    pipeline: Pipeline,
+    features: pd.DataFrame,
+    target: pd.Series,
+    groups: pd.Series,
+    n_splits: int = DEFAULT_N_SPLITS,
+    n_bins: int = 10,
+) -> dict[str, list[float] | float]:
+    """Calibração das probabilidades previstas, via probabilidades
+    fora-da-dobra.
+
+    Responde uma pergunta diferente de ROC-AUC: não "o modelo ranqueia
+    bem?", mas "quando o modelo diz 30% de chance, isso acontece ~30% das
+    vezes de verdade?" — um modelo pode ranquear perfeitamente (ROC-AUC
+    alto) e ainda ter probabilidades mal calibradas (sempre
+    superestimando ou subestimando o risco real).
+
+    `strategy="quantile"` (não `"uniform"`) pros bins — com dataset
+    pequeno e classe rara, bins de largura igual (`"uniform"`) facilmente
+    ficam quase vazios; bins por quantil garantem uma quantidade
+    razoável de exemplo em cada um.
+
+    `brier_score_loss` resume a calibração num único número (erro
+    quadrático médio entre probabilidade prevista e resultado real; 0 =
+    calibração perfeita, menor é melhor) — útil pra comparar modelos
+    diferentes sem inspecionar a curva inteira.
+    """
+    probabilities = compute_out_of_fold_probabilities(
+        pipeline, features, target, groups, n_splits
+    )
+    fraction_of_positives, mean_predicted_value = calibration_curve(
+        target, probabilities, n_bins=n_bins, strategy="quantile"
+    )
+
+    return {
+        "brier_score": float(brier_score_loss(target, probabilities)),
+        "fraction_of_positives": fraction_of_positives.tolist(),
+        "mean_predicted_value": mean_predicted_value.tolist(),
     }
 
 
