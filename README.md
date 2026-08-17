@@ -16,25 +16,26 @@ encontrados e hipóteses testadas (confirmadas e não confirmadas).
 
 ```
 src/f1_ml_garage/
-  ├── data/ # normalização + carregamento (única parte
-  │ │ # que fala com a rede FastF1)
-  │ ├── timeutils.py # conversão Timedelta -> segundos, compartilhada
-  │ ├── laps.py # normalização de voltas + filtros de qualidade
-  │ ├── results.py # normalização de classificação final (inclui dnf)
-  │ ├── telemetry.py # normalização de telemetria por amostra
-  │ └── session.py # carregamento via FastF1, com cache
-  ├── features/ # feature engineering, sem tocar rede
-  │ ├── pace.py # features do modelo de ritmo (Módulo 2)
-  │ ├── dnf.py # features do modelo de DNF (Módulo 2)
-  │ ├── telemetry_summary.py # telemetria -> vetor de features por volta
-  │ ├── tyre.py # features do SVM de composto (Módulo 2)
-  │ └── driving_style.py # features de clustering de estilo (Módulo 4)
-  └── models/ # pipelines e avaliação
-  ├── pace.py # regressão linear de tempo de volta
-  ├── dnf.py # árvore de decisão + regressão logística
-  ├── evaluation.py # avaliação de classificadores, compartilhada
-  ├── tyre.py # SVM de composto
-  └── clustering.py # PCA + k-means + GMM/EM
+├── data/                    # normalização + carregamento (única parte
+│   │                        # que fala com a rede FastF1)
+│   ├── timeutils.py         # conversão Timedelta -> segundos, compartilhada
+│   ├── laps.py              # normalização de voltas + filtros de qualidade
+│   ├── results.py           # normalização de classificação final (inclui dnf)
+│   ├── telemetry.py         # normalização de telemetria por amostra
+│   └── session.py           # carregamento via FastF1, com cache
+├── features/                # feature engineering, sem tocar rede
+│   ├── pace.py               # features do modelo de ritmo (Módulo 2)
+│   ├── dnf.py                 # features do modelo de DNF (Módulo 2)
+│   ├── telemetry_summary.py    # telemetria -> vetor de features por volta
+│   ├── tyre.py                  # features do SVM de composto (Módulo 2)
+│   └── driving_style.py          # features de clustering de estilo (Módulo 4)
+└── models/                  # pipelines e avaliação
+    ├── pace.py               # regressão linear de tempo de volta
+    ├── dnf.py                 # árvore, logística, Random Forest, XGBoost,
+    │                          # stacking — 5 modelos pro mesmo problema
+    ├── evaluation.py          # avaliação de classificadores, compartilhada
+    ├── tyre.py                 # SVM de composto
+    └── clustering.py            # PCA + k-means + GMM/EM
 ```
 
 ## Setup
@@ -75,11 +76,13 @@ make check          # lint + format-check
   resultados, telemetria, carregamento e cache
 - [`01-pace-model.md`](docs/01-pace-model.md) — Módulo 2: regressão linear
   de ritmo de corrida (2 bugs de colinearidade encontrados e corrigidos)
-- [`02-dnf-model.md`](docs/02-dnf-model.md) — Módulo 2: árvore de decisão +
-  regressão logística prevendo abandono (bug real de dados no alvo `dnf`,
-  corrigido; dados desbalanceados em números reais)
+- [`02-dnf-model.md`](docs/02-dnf-model.md) — Módulo 2: 5 classificadores
+  de abandono (árvore, logística, Random Forest, XGBoost, stacking) — bug
+  real de dados no alvo `dnf` corrigido, dados desbalanceados e ajuste de
+  limiar de decisão em números reais, bias-variance via capacidade de
+  ensemble, feature engineering testada e não confirmada
 - [`03-tyre-model.md`](docs/03-tyre-model.md) — Módulo 2: SVM classificando
   composto de pneu via telemetria
 - [`04-driving-style-clustering.md`](docs/04-driving-style-clustering.md) —
-  Módulo 4: PCA + k-means + GMM/EM explorando estilo de pilotagem, 5
+  Módulo 4: PCA + k-means + GMM/EM explorando estilo de pilotagem, 6
   iterações de hipóteses testadas contra dado real

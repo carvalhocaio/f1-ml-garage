@@ -1,9 +1,12 @@
-"""Avaliação de classificadores binários, compartilhada entre modelos de DNF.
+"""Avaliação de classificadores, compartilhada entre os modelos do projeto.
 
 `StratifiedGroupKFold` + as métricas de dados desbalanceados (accuracy,
 precision, recall, f1, com `zero_division` explícito) não dependem de qual
-classificador está por trás do pipeline - extraído aqui para reusar entre
-árvore de decisão e regressão logística sem duplicar a lógica de CV.
+classificador está por trás do pipeline — extraído aqui pra reusar entre
+os 5 modelos de DNF (`models/dnf.py`) sem duplicar a lógica de CV.
+`evaluate_multiclass_classifier`, no final do arquivo, faz o mesmo pro SVM
+de composto (`models/tyre.py`) — binário e multiclasse não compartilham
+scoring, mas compartilham a mesma lógica de `StratifiedGroupKFold`.
 """
 
 import numpy as np

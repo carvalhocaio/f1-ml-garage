@@ -1,12 +1,18 @@
-"""Features para o classificador de DNF (Módulo 2, árvore de decisão).
+"""Features para o classificador de DNF (Módulo 2, aprendizado supervisionado).
 
-O ponto mais importante deste módulo não é a árvore — é quais colunas de
-`results.py` são seguras de usar. `position`, `classified_position`,
-`points`, `race_time_s`, `laps_completed` e `status` são todos RESULTADO da
-corrida — usá-los pra prever `dnf` é vazamento de alvo (ex.: `laps_completed`
-baixo é quase a própria definição de DNF, não uma feature preditiva dele).
-As únicas colunas de `results.py` conhecidas ANTES da corrida largar são
-`grid_position` e `team`.
+O ponto mais importante deste módulo não é qual algoritmo consome as
+features (5 modelos diferentes usam as mesmas, ver `models/dnf.py`) — é
+quais colunas de `results.py` são seguras de usar. `position`,
+`classified_position`, `points`, `race_time_s`, `laps_completed` e
+`status` são todos RESULTADO da corrida — usá-los pra prever `dnf` é
+vazamento de alvo (ex.: `laps_completed` baixo é quase a própria
+definição de DNF, não uma feature preditiva dele).
+
+Duas colunas de `results.py` são conhecidas ANTES da corrida largar por
+si só: `grid_position` e `team`. Uma terceira, opcional, é DERIVADA de
+corridas passadas sem vazar a atual: `team_reliability`
+(`compute_team_reliability_feature`) — testada e não confirmada como
+melhoria (ver `docs/02-dnf-model.md`), mas mantida como opção.
 """
 
 import pandas as pd

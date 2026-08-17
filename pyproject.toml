@@ -1,7 +1,7 @@
 [project]
 name = "f1-ml-garage"
 version = "0.1.0"
-description = "Add your description here"
+description = "Laboratório de Machine Learning clássico aplicado a dados reais de Fórmula 1 (FastF1)"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

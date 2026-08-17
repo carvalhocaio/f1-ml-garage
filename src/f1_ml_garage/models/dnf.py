@@ -1,10 +1,12 @@
 """Classificadores de DNF (Módulo 2 — aprendizado supervisionado).
 
-Dois modelos pro mesmo problema — árvore de decisão e regressão logística
-— pra comparar diretamente. Dois pontos do currículo se encontram aqui além
-disso: dados desbalanceados (DNF é raro) e bias-variance (uma árvore sem
-limite de profundidade decora o treino fácil, com poucas features e pouca
-amostra).
+Cinco modelos pro mesmo problema — árvore de decisão, regressão logística,
+Random Forest, XGBoost e stacking dos quatro — pra comparar diretamente
+(ver `docs/02-dnf-model.md` pro resultado real de cada um). Três pontos do
+currículo se encontram aqui além disso: dados desbalanceados (DNF é raro),
+bias-variance (capacidade de modelo — profundidade de árvore,
+`n_estimators` — importa tanto quanto o algoritmo escolhido), e ensembles
+(bagging, boosting, stacking).
 """
 
 import pandas as pd

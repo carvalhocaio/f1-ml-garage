@@ -1,9 +1,31 @@
 # 02 — Modelo de DNF (Módulo 2, aprendizado supervisionado)
 
-Árvore de decisão prevendo se um piloto abandona a corrida, a partir só do
-que se sabe ANTES da largada: posição de grid e equipe. Cruza dois tópicos
-do currículo — dados desbalanceados e bias-variance — não só "árvore de
-decisão".
+Cinco classificadores (árvore, logística, Random Forest, XGBoost,
+stacking) prevendo se um piloto abandona a corrida, a partir só do que se
+sabe ANTES da largada: posição de grid e equipe. Cruza três tópicos do
+currículo — dados desbalanceados, bias-variance e ensembles — não só
+"árvore de decisão".
+
+## Resumo
+
+- **Recomendação prática:** regressão logística
+  (`build_dnf_logistic_pipeline`) com limiar de decisão ajustado
+  (`evaluate_classifier_with_tuned_threshold`) — o modelo mais simples dos
+  cinco, e ainda assim o de melhor F1 (0.295), mesmo depois de testar
+  ensembles e uma feature nova.
+- **Dois bugs reais de dados** encontrados e corrigidos no alvo `dnf`
+  ("Bug 1") — nenhum dos dois era problema de modelo.
+- **Accuracy sozinha engana** com classe rara (~11% DNF): sempre olhar
+  recall/F1, e ajustar o limiar de decisão em vez de confiar só no corte
+  padrão de 0.5 — isso mudou o resultado mais que trocar de algoritmo.
+- **Ensembles não venceram** um modelo simples aqui — o teto observado
+  parece ser de features disponíveis (só 2-3), não de capacidade de
+  modelo.
+- Uma hipótese confirmada com dado real (capacidade excessiva do
+  XGBoost); duas não confirmadas (alvo restrito a "Retired"; feature de
+  confiabilidade de equipe) — registradas do mesmo jeito, sem esconder.
+
+## Por que várias corridas, não uma só
 
 ## Por que várias corridas, não uma só
 

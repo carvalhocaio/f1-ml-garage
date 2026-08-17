@@ -1,10 +1,26 @@
 # 04 — Clustering de Estilo de Pilotagem (Módulo 4, não-supervisionado)
 
-PCA + k-means sobre telemetria agregada por volta, tentando descobrir
+PCA + k-means/GMM sobre telemetria agregada por volta, tentando descobrir
 estrutura sem alvo — diferente de todo o Módulo 2 (supervisionado), aqui
 não existe "certo"/"errado" a priori. O fio condutor da investigação foi
 "os clusters formados batem com alguma coisa que já conhecemos
 (composto)?", usada como checagem de sanidade, não como alvo de treino.
+
+## Resumo
+
+- **Achado principal:** existe sinal real de composto na telemetria, mas
+  bem mais fraco do que parecia a princípio — a maior parte do contraste
+  observado nas primeiras iterações era fase da corrida (`lap_number`)
+  disfarçada de composto, não composto em si (iteração 5).
+- `n_clusters=3` (o padrão inicial, nunca justificado) estava errado — o
+  BIC do GMM mostra `k=2` como estrutura real dos dados (iteração 4).
+- Depois de controlar por piloto E por fase da corrida
+  (`detrend_lap_number=True`), o contraste de composto entre os 2 grupos
+  cai quase pela metade (28.6 → 16.4 pontos percentuais) mas não some —
+  sinal residual real, não artefato (iteração 6).
+- Pra reproduzir o resultado final: `build_driving_style_features(...,
+  detrend_lap_number=True)` → `fit_pca` → `select_n_components_by_bic` →
+  `fit_gmm`.
 
 ## Iteração 1 — telemetria bruta, sem filtro
 
