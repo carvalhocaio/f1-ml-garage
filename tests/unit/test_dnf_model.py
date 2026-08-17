@@ -6,10 +6,14 @@ from f1_ml_garage.models.dnf import (
     build_dnf_boosting_pipeline,
     build_dnf_logistic_pipeline,
     build_dnf_random_forest_pipeline,
+    build_dnf_stacking_pipeline,
     build_dnf_tree_pipeline,
     compute_scale_pos_weight,
 )
-from f1_ml_garage.models.evaluation import evaluate_classifier
+from f1_ml_garage.models.evaluation import (
+    evaluate_classifier,
+    evaluate_classifier_with_tuned_threshold,
+)
 
 N_DRIVERS = 20
 RACES_PER_DRIVER = 6
@@ -222,3 +226,43 @@ def test_scale_pos_weight_improves_recall_on_imbalanced_data():
     )
 
     assert weighted["recall"] > unweighted["recall"]
+
+
+@pytest.mark.unit
+def test_stacking_recovers_known_separable_pattern():
+    """Stacking combina árvore/logística/Random Forest/XGBoost enxuto via
+    um meta-modelo — num padrão perfeitamente separável, deveria recuperar
+    tão bem quanto os modelos base individuais recuperam sozinhos."""
+    features, target, groups = _separable_dnf_dataset()
+    scale_pos_weight = compute_scale_pos_weight(target)
+
+    result = evaluate_classifier(
+        build_dnf_stacking_pipeline(scale_pos_weight=scale_pos_weight),
+        features,
+        target,
+        groups,
+        n_splits=4,
+    )
+
+    assert result["recall"] == pytest.approx(1.0, abs=1e-6)
+    assert result["precision"] == pytest.approx(1.0, abs=1e-6)
+    assert result["f1"] == pytest.approx(1.0, abs=1e-6)
+
+
+@pytest.mark.unit
+def test_stacking_with_tuned_threshold_beats_zero_recall_default():
+    """No limiar padrão (0.5), o stacking também zera recall no cenário
+    ruidoso/desbalanceado — mesma lição de sempre (árvore, logística, RF,
+    XGBoost, todos precisaram de ajuste de limiar aqui). Com o limiar
+    ajustado, tem que recuperar sinal de verdade."""
+    features, target, groups = _noisy_imbalanced_dataset()
+    scale_pos_weight = compute_scale_pos_weight(target)
+    pipeline = build_dnf_stacking_pipeline(scale_pos_weight=scale_pos_weight)
+
+    default_cutoff = evaluate_classifier(pipeline, features, target, groups, n_splits=5)
+    tuned = evaluate_classifier_with_tuned_threshold(
+        pipeline, features, target, groups, n_splits=5
+    )
+
+    assert default_cutoff["f1"] == pytest.approx(0.0, abs=1e-6)
+    assert tuned["f1"] > 0.3

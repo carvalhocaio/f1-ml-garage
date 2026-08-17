@@ -9,7 +9,7 @@ amostra).
 
 import pandas as pd
 from sklearn.compose import ColumnTransformer
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, StackingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -185,3 +185,54 @@ def build_dnf_boosting_pipeline(
             )
         ]
     )
+
+
+# Configuração enxuta pro XGBoost dentro do stacking, não a original
+# (200/4) — reproduzir aqui o overfit já documentado na seção de
+# capacidade (`docs/02-dnf-model.md`) contaminaria o meta-modelo com um
+# modelo base mal calibrado, sem motivo.
+_STACKING_XGBOOST_N_ESTIMATORS = 20
+_STACKING_XGBOOST_MAX_DEPTH = 2
+
+
+def build_dnf_stacking_pipeline(scale_pos_weight: float = 1.0) -> Pipeline:
+    """Stacking: combina as previsões de vários modelos base (árvore,
+    logística, Random Forest, XGBoost enxuto) via um meta-modelo
+    (regressão logística) que aprende a pesar cada um.
+
+    Diferente de bagging (várias árvores independentes, votando) e
+    boosting (árvores em sequência corrigindo o erro da anterior),
+    stacking combina modelos DE NATUREZA DIFERENTE (não instâncias do
+    mesmo algoritmo) — pode capturar ganho se os modelos base erram em
+    lugares diferentes um do outro, não só reduzir variância/viés de um
+    algoritmo só.
+
+    Limitação honesta: o `cv` interno do `StackingClassifier` (usado pra
+    gerar as previsões dos modelos base que viram feature de entrada do
+    meta-modelo) não conhece `groups` — `StackingClassifier.fit()` não
+    aceita esse parâmetro sem ativar metadata routing, e essa versão do
+    sklearn não suporta roteá-lo até aqui. É uma limitação LOCAL, dentro
+    do treino: a avaliação real (via `evaluate_classifier`/
+    `evaluate_classifier_with_tuned_threshold`, que embrulham isso numa
+    `StratifiedGroupKFold` própria por fora) continua sem vazar piloto
+    entre treino e teste no nível que de fato importa.
+    """
+    estimators = [
+        ("tree", build_dnf_tree_pipeline()),
+        ("logistic", build_dnf_logistic_pipeline()),
+        ("random_forest", build_dnf_random_forest_pipeline()),
+        (
+            "xgboost",
+            build_dnf_boosting_pipeline(
+                scale_pos_weight=scale_pos_weight,
+                n_estimators=_STACKING_XGBOOST_N_ESTIMATORS,
+                max_depth=_STACKING_XGBOOST_MAX_DEPTH,
+            ),
+        ),
+    ]
+    stacking = StackingClassifier(
+        estimators=estimators,
+        final_estimator=LogisticRegression(random_state=0),
+        cv=5,
+    )
+    return Pipeline([("model", stacking)])
