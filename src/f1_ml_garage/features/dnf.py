@@ -17,6 +17,8 @@ melhoria (ver `docs/02-dnf-model.md`), mas mantida como opção.
 
 import pandas as pd
 
+from f1_ml_garage.data.circuits import is_street_circuit
+
 
 def select_race_starters(results: pd.DataFrame) -> pd.DataFrame:
     """Remove pilotos que nunca largaram a corrida ("Did not start").
@@ -103,11 +105,25 @@ def fill_missing_team_reliability(reliability: pd.Series) -> pd.Series:
     return reliability.fillna(reliability.mean())
 
 
+def compute_circuit_type_feature(results: pd.DataFrame) -> pd.Series:
+    """`True` se a corrida é num circuito de rua conhecido
+    (`data/circuits.py`), `False` caso contrário.
+
+    Requer `event_name` (marcado por `load_season_results`). Diferente de
+    `team_reliability`, esta feature varia por RODADA, não por equipe —
+    genuinamente ortogonal ao `team` one-hot já presente em X, não uma
+    versão redundante/ruidosa da mesma informação (a lição da seção
+    anterior, `docs/02-dnf-model.md`).
+    """
+    return results["event_name"].apply(is_street_circuit)
+
+
 def build_dnf_features(
     results: pd.DataFrame,
     target_column: str = "dnf",
     *,
     include_team_reliability: bool = False,
+    include_circuit_type: bool = False,
 ) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
     """Monta a matriz de features (X), o alvo (y) e os grupos (piloto).
 
@@ -129,10 +145,14 @@ def build_dnf_features(
 
     `include_team_reliability=True` adiciona `team_reliability`
     (`compute_team_reliability_feature` + `fill_missing_team_reliability`)
-    como terceira feature — opt-in, não padrão, pra manter a comparação
+    — opt-in, testada e não confirmada como melhoria
+    (`docs/02-dnf-model.md`), mantida como opção.
+
+    `include_circuit_type=True` adiciona `is_street_circuit`
+    (`compute_circuit_type_feature`) — opt-in, pra manter a comparação
     "com" vs "sem" limpa (mesmo espírito de `relative_to_driver` em
     `features/driving_style.py`). Requer `results` vindo de
-    `load_season_results` (precisa de `round_number`).
+    `load_season_results` (precisa de `round_number` e `event_name`).
     """
     team_dummies = pd.get_dummies(results["team"], prefix="team")
 
@@ -145,6 +165,11 @@ def build_dnf_features(
         reliability = fill_missing_team_reliability(reliability)
         feature_frames.append(
             reliability.rename("team_reliability").reset_index(drop=True)
+        )
+    if include_circuit_type:
+        circuit_type = compute_circuit_type_feature(results)
+        feature_frames.append(
+            circuit_type.rename("is_street_circuit").reset_index(drop=True)
         )
 
     features = pd.concat(feature_frames, axis=1)

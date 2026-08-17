@@ -4,6 +4,7 @@ import pytest
 from f1_ml_garage.features.dnf import (
     build_dnf_features,
     build_retirement_target,
+    compute_circuit_type_feature,
     compute_team_reliability_feature,
     fill_missing_team_reliability,
     select_race_starters,
@@ -211,3 +212,57 @@ def test_build_dnf_features_without_team_reliability_is_unchanged():
     features, _, _ = build_dnf_features(results)
 
     assert "team_reliability" not in features.columns
+
+
+def _results_with_event_name(**overrides: object) -> pd.DataFrame:
+    """Formato de saída de `load_season_results`, com `event_name` — 1
+    corrida de rua (Monaco) e 1 permanente (Bahrain)."""
+    base = pd.DataFrame(
+        {
+            "driver": ["VER", "HAM"],
+            "team": ["Red Bull Racing", "Mercedes"],
+            "grid_position": [1.0, 3.0],
+            "dnf": [False, True],
+            "event_name": ["Monaco Grand Prix", "Bahrain Grand Prix"],
+        }
+    )
+    return base.assign(**overrides)
+
+
+@pytest.mark.unit
+def test_compute_circuit_type_feature_matches_known_circuits():
+    results = _results_with_event_name()
+    circuit_type = compute_circuit_type_feature(results)
+
+    assert list(circuit_type) == [True, False]
+
+
+@pytest.mark.unit
+def test_build_dnf_features_with_circuit_type_adds_column():
+    results = _results_with_event_name()
+    features, _, _ = build_dnf_features(results, include_circuit_type=True)
+
+    assert list(features["is_street_circuit"]) == [True, False]
+
+
+@pytest.mark.unit
+def test_build_dnf_features_without_circuit_type_is_unchanged():
+    """Comportamento padrão (opt-in `False`) continua igual ao de antes."""
+    results = _results_with_event_name()
+    features, _, _ = build_dnf_features(results)
+
+    assert "is_street_circuit" not in features.columns
+
+
+@pytest.mark.unit
+def test_build_dnf_features_with_both_new_features_together():
+    """team_reliability e is_street_circuit são independentes — dá pra
+    ligar os dois ao mesmo tempo sem conflito."""
+    results = _multi_round_results().assign(
+        event_name=["Monaco Grand Prix"] * 4 + ["Bahrain Grand Prix"] * 4
+    )
+    features, _, _ = build_dnf_features(
+        results, include_team_reliability=True, include_circuit_type=True
+    )
+
+    assert {"team_reliability", "is_street_circuit"}.issubset(features.columns)
