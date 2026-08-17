@@ -261,18 +261,44 @@ de quanto qualquer técnica extrai desse dataset. O modelo mais simples
 (logística) segue no topo; combinar os outros quatro recupera parte da
 distância, sem superá-lo.
 
+## Feature nova: histórico de confiabilidade da equipe — hipótese não confirmada
+
+`compute_team_reliability_feature` (`features/dnf.py`): taxa de DNF da
+equipe nas corridas ANTERIORES da mesma temporada, janela expansível.
+Motivado pela conclusão da seção de stacking — o teto parecia ser de
+features, não de modelo.
+
+Bug real encontrado ANTES de rodar contra dado de verdade: duas equipes
+têm 2 pilotos correndo na MESMA rodada, ao mesmo tempo — um cálculo
+`shift(1)/expanding()` linha a linha (uma linha por piloto) deixava o
+resultado de um piloto vazar pro "histórico" do companheiro de equipe da
+própria rodada, que não é passado, é simultâneo. Corrigido agregando a
+taxa de DNF por (`team`, `round_number`) PRIMEIRO, e só depois aplicando a
+janela expansível sobre essa série agregada — testado com um caso
+específico de dois pilotos do mesmo time na mesma rodada antes de seguir.
+
+Resultado real, `include_team_reliability=True` (3 features em vez de 2),
+limiar ajustado:
+
+```
+                sem reliability   com reliability   Δ
+árvore:         0.276             0.250             -0.026
+logística:      0.290             0.295             +0.005
+random forest:  0.264             0.271             +0.007
+xgboost (leve): 0.275             0.260             -0.015
+stacking:       0.283             0.292             +0.009
+```
+
 ## Próximos passos possíveis
 
+- **Característica de circuito (rua vs. permanente)** — candidata mais
+  forte agora, justamente por ser ortogonal à identidade da equipe
+  (diferente de `team_reliability`, que se mostrou redundante). Mônaco/
+  Baku têm taxa de incidente bem diferente de Silverstone/Barcelona por
+  motivos que não têm nada a ver com qual equipe está correndo.
 - Combinar múltiplas temporadas (2022-2024) — mais amostra, poder
   estatístico real pra revisitar o experimento do alvo restrito, e talvez
   dar mais capacidade (XGBoost, RF) espaço real pra valer a pena.
-- Features adicionais conhecidas antes da largada: histórico de
-  confiabilidade da equipe (taxa de DNF em corridas anteriores DAQUELA
-  temporada, cuidado pra não vazar o futuro), característica do circuito
-  (rua vs permanente — Mônaco/Baku têm taxa de incidente bem diferente de
-  Silverstone/Barcelona). Provavelmente o maior alavancador real — o teto
-  observado nesta investigação parece mais limitado por FEATURES do que
-  por escolha de modelo.
 - Busca sistemática de hiperparâmetros (grid/random search com CV, em vez
   de varrer uma lista curta na mão).
 
