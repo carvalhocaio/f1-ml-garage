@@ -11,21 +11,22 @@ currículo — dados desbalanceados, bias-variance e ensembles — não só
 - **Recomendação prática:** regressão logística
   (`build_dnf_logistic_pipeline`) com limiar de decisão ajustado
   (`evaluate_classifier_with_tuned_threshold`) — o modelo mais simples dos
-  cinco, e ainda assim o de melhor F1 (0.295), mesmo depois de testar
-  ensembles e uma feature nova.
+  cinco, e o de melhor F1 (0.299) mesmo depois de ensembles e feature
+  engineering adicional.
 - **Dois bugs reais de dados** encontrados e corrigidos no alvo `dnf`
   ("Bug 1") — nenhum dos dois era problema de modelo.
 - **Accuracy sozinha engana** com classe rara (~11% DNF): sempre olhar
   recall/F1, e ajustar o limiar de decisão em vez de confiar só no corte
   padrão de 0.5 — isso mudou o resultado mais que trocar de algoritmo.
-- **Ensembles não venceram** um modelo simples aqui — o teto observado
-  parece ser de features disponíveis (só 2-3), não de capacidade de
-  modelo.
-- Uma hipótese confirmada com dado real (capacidade excessiva do
-  XGBoost); duas não confirmadas (alvo restrito a "Retired"; feature de
-  confiabilidade de equipe) — registradas do mesmo jeito, sem esconder.
-
-## Por que várias corridas, não uma só
+- **Ensembles não venceram** um modelo simples aqui.
+- **Investigação de features encerrada, não em aberto:** testamos 3
+  extensões (alvo restrito, confiabilidade de equipe, tipo de circuito —
+  a última genuinamente ortogonal à equipe) e nenhuma moveu o F1 de forma
+  relevante (todas dentro de ±0.01, ruído normal desse dataset). O teto
+  observado (F1 ≈ 0.27-0.30) é real e consistente o suficiente pra
+  concluir que mais feature engineering neste dataset específico não é o
+  caminho — precisaria de mais DADOS (mais temporadas), não mais
+  variáveis.
 
 ## Por que várias corridas, não uma só
 
@@ -311,19 +312,57 @@ xgboost (leve): 0.275             0.260             -0.015
 stacking:       0.283             0.292             +0.009
 ```
 
+## Feature nova: tipo de circuito — mesmo teto, mesmo resultado
+
+`compute_circuit_type_feature` (`features/dnf.py`, `data/circuits.py`):
+`True`/`False` se a corrida é num circuito de rua conhecido (Mônaco,
+Baku, Cingapura, Las Vegas, Miami, Jeddah — curadoria manual, não vem do
+FastF1). Diferente de `team_reliability`, esta feature é genuinamente
+ORTOGONAL à identidade da equipe (varia por rodada, não por time) — o
+candidato certo pra testar se o teto era mesmo de redundância ou de outra
+coisa.
+
+Resultado real, 4 features (`grid_position` + `team` + `team_reliability`
++ `is_street_circuit`), limiar ajustado:
+
+```
+                +team_reliability   +circuit_type   Δ
+árvore:              0.250             0.250      0.000
+logística:           0.295             0.299      +0.004
+random forest:       0.271             0.268      -0.003
+xgboost (leve):      0.260             0.262      +0.002
+stacking:            0.292             0.265      -0.027
+```
+
+**Nem uma feature genuinamente ortogonal moveu o ponteiro.** A logística
+chega no seu melhor F1 até aqui (0.299), mas é ganho de ruído (~1.4%
+relativo), não de sinal. O stacking piora de forma não-trivial — mais
+features alimentando um meta-modelo sobre 4 modelos base é mais
+complexidade sem sinal correspondente pra sustentar.
+
+**Conclusão da linha de investigação de features:** testamos 3 extensões
+(alvo restrito, confiabilidade de equipe, tipo de circuito) e nenhuma
+mudou o resultado de forma relevante — sempre dentro de ±0.01 de F1, a
+faixa de ruído normal desse dataset (`StratifiedGroupKFold` com poucos
+positivos é instável, como já vimos desde a seção de alvo restrito). Isso
+não é mais "hipótese não confirmada" isolada, é um padrão consistente o
+suficiente pra concluir: o teto (F1 ≈ 0.27-0.30) é real, e não vai ceder
+a mais engenharia de feature neste dataset específico — precisaria de
+mais DADOS (mais temporadas, poder estatístico real), não mais
+variáveis. Investigação de features encerrada por aqui.
+
 ## Próximos passos possíveis
 
-- **Característica de circuito (rua vs. permanente)** — candidata mais
-  forte agora, justamente por ser ortogonal à identidade da equipe
-  (diferente de `team_reliability`, que se mostrou redundante). Mônaco/
-  Baku têm taxa de incidente bem diferente de Silverstone/Barcelona por
-  motivos que não têm nada a ver com qual equipe está correndo.
-- Combinar múltiplas temporadas (2022-2024) — mais amostra, poder
-  estatístico real pra revisitar o experimento do alvo restrito, e talvez
-  dar mais capacidade (XGBoost, RF) espaço real pra valer a pena.
+- Combinar múltiplas temporadas (2022-2024) — o único caminho real pra
+  ir além do teto atual: mais amostra, poder estatístico de verdade pra
+  revisitar tanto o experimento do alvo restrito quanto as features que
+  não confirmaram aqui (podem ter efeito real que 479 linhas não têm
+  poder estatístico pra detectar).
 - Busca sistemática de hiperparâmetros (grid/random search com CV, em vez
-  de varrer uma lista curta na mão).
+  de varrer uma lista curta na mão) — não testado ainda, mas dado o teto
+  observado, expectativa realista é de ganho pequeno.
 
 O resto do Módulo 2 (SVM+kernels, classificar composto via telemetria)
 está completo — ver `docs/03-tyre-model.md`. Ensembles (bagging, boosting,
-stacking) também completo.
+stacking) e a investigação de feature engineering do alvo `dnf` também
+estão completos.
